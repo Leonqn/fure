@@ -1,10 +1,5 @@
 use std::future::{ready, Future, Ready};
-use std::{
-    pin::Pin,
-    process::Output,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{pin::Pin, time::Duration};
 
 use future::ParallelRetry;
 use tokio::time::{sleep, Sleep};
@@ -59,11 +54,13 @@ impl<T, E> Attempt<T, E> for Parallel {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg(feature = "tokio")]
 pub struct DelayedParallel {
     parallel: Parallel,
     delay_attempt: Duration,
 }
 
+#[cfg(feature = "tokio")]
 impl DelayedParallel {
     pub fn new(max_attempts: usize, delay_attempt: Duration) -> Self {
         Self {
@@ -73,6 +70,7 @@ impl DelayedParallel {
     }
 }
 
+#[cfg(feature = "tokio")]
 impl<T, E> Attempt<T, E> for DelayedParallel {
     type DelayFuture = Pin<Box<Sleep>>;
 

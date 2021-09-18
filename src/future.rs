@@ -108,7 +108,7 @@ fn poll_vec<F: Future + Unpin>(v: &mut Vec<F>, cx: &mut Context<'_>) -> Poll<F::
     match item {
         Some((idx, r)) => {
             v.swap_remove(idx);
-            return Poll::Ready(r);
+            Poll::Ready(r)
         }
         None => Poll::Pending,
     }
