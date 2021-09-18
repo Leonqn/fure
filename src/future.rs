@@ -13,7 +13,7 @@ where
     attempt: Option<A>,
     create_f: CF,
     running_futs: Vec<F>,
-    timeout: Option<A::DelayFuture>,
+    delay: Option<A::DelayFuture>,
 }
 
 impl<A, T, E, F, CF> ConcurrentRetry<A, T, E, F, CF>
@@ -24,13 +24,13 @@ where
         attempt: A,
         create_f: CF,
         running_futs: Vec<F>,
-        timeout: Option<A::DelayFuture>,
+        delay: Option<A::DelayFuture>,
     ) -> Self {
         Self {
             attempt: Some(attempt),
             create_f,
             running_futs,
-            timeout,
+            delay,
         }
     }
 }
@@ -57,7 +57,7 @@ where
         }
 
         loop {
-            while let Poll::Ready(r) = poll_vec(&mut self.running_futs, cx) {
+            while let Some(r) = poll_vec(&mut self.running_futs, cx) {
                 match self.attempt.as_ref().and_then(|a| a.next(Some(&r))) {
                     Some(a) => {
                         let f = (self.create_f)();
@@ -67,19 +67,26 @@ where
                     None => return Poll::Ready(r),
                 }
             }
-            match self.timeout.as_mut() {
-                Some(timeout) => match poll_unpin(timeout, cx) {
+            match self.delay.as_mut() {
+                Some(delay) => match poll_unpin(delay, cx) {
                     Poll::Ready(_) => {
                         self.attempt = self.attempt.as_ref().and_then(|x| x.next(None));
-                        self.timeout = None;
-                        let send_f = (self.create_f)();
-                        self.running_futs.push(send_f);
+                        self.delay = None;
+                        if self.attempt.is_some() {
+                            let send_f = (self.create_f)();
+                            self.running_futs.push(send_f);
+                        }
                     }
                     Poll::Pending => {
                         return Poll::Pending;
                     }
                 },
-                None => self.timeout = self.attempt.as_ref().map(|x| x.delay()),
+                None => {
+                    self.delay = self.attempt.as_ref().map(|x| x.delay());
+                    if self.delay.is_none() {
+                        return Poll::Pending;
+                    }
+                }
             }
         }
     }
@@ -92,19 +99,15 @@ where
     Pin::new(f).poll(cx)
 }
 
-fn poll_vec<F: Future + Unpin>(v: &mut Vec<F>, cx: &mut Context<'_>) -> Poll<F::Output> {
-    let item = v
-        .iter_mut()
+fn poll_vec<F: Future + Unpin>(v: &mut Vec<F>, cx: &mut Context<'_>) -> Option<F::Output> {
+    v.iter_mut()
         .enumerate()
         .find_map(|(i, f)| match poll_unpin(f, cx) {
             Poll::Pending => None,
             Poll::Ready(e) => Some((i, e)),
-        });
-    match item {
-        Some((idx, r)) => {
+        })
+        .map(|(idx, r)| {
             v.swap_remove(idx);
-            Poll::Ready(r)
-        }
-        None => Poll::Pending,
-    }
+            r
+        })
 }

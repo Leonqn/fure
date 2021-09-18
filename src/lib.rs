@@ -24,7 +24,7 @@ where
     FN: FnMut() -> F,
 {
     fn create(&mut self) -> F {
-        (self)()
+        self()
     }
 }
 
@@ -37,21 +37,23 @@ pub trait Attempt<T, E>: Sized {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Parallel {
-    max_parallelism: usize,
+pub struct Concurrent {
+    max_additional_attempts: usize,
 }
 
-impl Parallel {
-    pub fn new(max_parallelism: usize) -> Self {
-        Self { max_parallelism }
+impl Concurrent {
+    pub fn new(max_additional_attempts: usize) -> Self {
+        Self {
+            max_additional_attempts,
+        }
     }
 
     fn dec(self) -> Option<Self> {
-        self.max_parallelism.checked_sub(1).map(Self::new)
+        self.max_additional_attempts.checked_sub(1).map(Self::new)
     }
 }
 
-impl<T, E> Attempt<T, E> for Parallel {
+impl<T, E> Attempt<T, E> for Concurrent {
     type DelayFuture = Ready<()>;
 
     fn delay(&self) -> Self::DelayFuture {
@@ -68,33 +70,33 @@ impl<T, E> Attempt<T, E> for Parallel {
 
 #[derive(Debug, Clone, Copy)]
 #[cfg(feature = "tokio")]
-pub struct DelayedParallel {
-    parallel: Parallel,
-    delay_attempt: Duration,
+pub struct DelayedConcurrent {
+    parallel: Concurrent,
+    next_attempt_delay: Duration,
 }
 
 #[cfg(feature = "tokio")]
-impl DelayedParallel {
-    pub fn new(max_attempts: usize, delay_attempt: Duration) -> Self {
+impl DelayedConcurrent {
+    pub fn new(max_additional_attempts: usize, next_attempt_delay: Duration) -> Self {
         Self {
-            parallel: Parallel::new(max_attempts),
-            delay_attempt,
+            parallel: Concurrent::new(max_additional_attempts),
+            next_attempt_delay,
         }
     }
 }
 
 #[cfg(feature = "tokio")]
-impl<T, E> Attempt<T, E> for DelayedParallel {
+impl<T, E> Attempt<T, E> for DelayedConcurrent {
     type DelayFuture = Pin<Box<Sleep>>;
 
     fn delay(&self) -> Self::DelayFuture {
-        Box::pin(sleep(self.delay_attempt))
+        Box::pin(sleep(self.next_attempt_delay))
     }
 
     fn next(&self, result: Option<&Result<T, E>>) -> Option<Self> {
         Some(Self {
             parallel: self.parallel.next(result)?,
-            delay_attempt: self.delay_attempt,
+            next_attempt_delay: self.next_attempt_delay,
         })
     }
 }
@@ -109,7 +111,78 @@ mod tests {
     use futures_util::FutureExt;
     use tokio::time::sleep;
 
-    use crate::{retry, DelayedParallel};
+    use crate::{retry, Concurrent, DelayedConcurrent};
+
+    #[tokio::test]
+    async fn concurrent_should_run_only_one_future_when_it_is_completed() {
+        let call_count = Arc::new(Mutex::new(0));
+        let create_fut = || {
+            let call_count = call_count.clone();
+            async move {
+                let mut mutex_guard = call_count.lock().unwrap();
+                *mutex_guard += 1;
+                Ok::<(), ()>(())
+            }
+            .boxed()
+        };
+
+        let result = retry(create_fut, Concurrent::new(1)).await;
+
+        let guard = call_count.lock().unwrap();
+        assert_eq!(*guard, 1);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn concurrent_should_run_all_futures_when_not_ready() {
+        let call_count = Arc::new(Mutex::new(0));
+        let create_fut = || {
+            let call_count = call_count.clone();
+            async move {
+                {
+                    let mut mutex_guard = call_count.lock().unwrap();
+                    *mutex_guard += 1;
+                }
+                sleep(Duration::from_millis(500)).await;
+                Ok::<(), ()>(())
+            }
+            .boxed()
+        };
+
+        let result = retry(create_fut, Concurrent::new(2)).await;
+
+        let guard = call_count.lock().unwrap();
+        assert_eq!(*guard, 3);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn concurrent_should_run_futures_till_ready_one() {
+        let call_count = Arc::new(Mutex::new(0));
+        let create_fut = || {
+            let call_count = call_count.clone();
+            async move {
+                let call = {
+                    let mut mutex_guard = call_count.lock().unwrap();
+                    *mutex_guard += 1;
+                    *mutex_guard
+                };
+                if call == 2 {
+                    Ok::<(), ()>(())
+                } else {
+                    sleep(Duration::from_millis(500)).await;
+                    Ok::<(), ()>(())
+                }
+            }
+            .boxed()
+        };
+
+        let result = retry(create_fut, Concurrent::new(2)).await;
+
+        let guard = call_count.lock().unwrap();
+        assert_eq!(*guard, 2);
+        assert!(result.is_ok());
+    }
 
     #[tokio::test]
     async fn should_retry_when_failed() {
@@ -130,7 +203,7 @@ mod tests {
 
         let result = retry(
             create_fut,
-            DelayedParallel::new(1, Duration::from_secs(10000)),
+            DelayedConcurrent::new(1, Duration::from_secs(10000)),
         )
         .await;
 
@@ -158,7 +231,7 @@ mod tests {
 
         let result = retry(
             create_fut,
-            DelayedParallel::new(1, Duration::from_secs(10000)),
+            DelayedConcurrent::new(1, Duration::from_secs(10000)),
         )
         .await;
 
@@ -190,7 +263,7 @@ mod tests {
 
         let result = retry(
             create_fut,
-            DelayedParallel::new(1, Duration::from_millis(1)),
+            DelayedConcurrent::new(1, Duration::from_millis(1)),
         )
         .await;
 
@@ -221,7 +294,7 @@ mod tests {
 
         let result = retry(
             create_fut,
-            DelayedParallel::new(1, Duration::from_millis(1)),
+            DelayedConcurrent::new(1, Duration::from_millis(1)),
         )
         .await;
 
