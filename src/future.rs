@@ -57,19 +57,14 @@ where
         }
 
         loop {
-            loop {
-                match poll_vec(&mut self.running_futs, cx) {
-                    Poll::Ready(r) => match self.attempt.as_ref().and_then(|a| a.next(Some(&r))) {
-                        Some(a) => {
-                            let f = (self.create_f)();
-                            self.running_futs.push(f);
-                            self.attempt = Some(a)
-                        }
-                        None => return Poll::Ready(r),
-                    },
-                    Poll::Pending => {
-                        break;
+            while let Poll::Ready(r) = poll_vec(&mut self.running_futs, cx) {
+                match self.attempt.as_ref().and_then(|a| a.next(Some(&r))) {
+                    Some(a) => {
+                        let f = (self.create_f)();
+                        self.running_futs.push(f);
+                        self.attempt = Some(a)
                     }
+                    None => return Poll::Ready(r),
                 }
             }
             match self.timeout.as_mut() {
