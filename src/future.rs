@@ -6,23 +6,23 @@ use std::{
 
 use crate::Attempt;
 
-pub struct ParallelRetry<A, T, E, F, FN>
+pub struct ConcurrentRetry<A, T, E, F, CF>
 where
     A: Attempt<T, E>,
 {
     attempt: Option<A>,
-    create_f: FN,
+    create_f: CF,
     running_futs: Vec<F>,
     timeout: Option<A::DelayFuture>,
 }
 
-impl<A, T, E, F, FN> ParallelRetry<A, T, E, F, FN>
+impl<A, T, E, F, CF> ConcurrentRetry<A, T, E, F, CF>
 where
     A: Attempt<T, E>,
 {
     pub(crate) fn new(
         attempt: A,
-        create_f: FN,
+        create_f: CF,
         running_futs: Vec<F>,
         timeout: Option<A::DelayFuture>,
     ) -> Self {
@@ -35,18 +35,18 @@ where
     }
 }
 
-impl<A, T, E, F, FN> Unpin for ParallelRetry<A, T, E, F, FN>
+impl<A, T, E, F, CF> Unpin for ConcurrentRetry<A, T, E, F, CF>
 where
     A: Attempt<T, E>,
     F: Unpin,
 {
 }
 
-impl<A, T, E, F, FN> Future for ParallelRetry<A, T, E, F, FN>
+impl<A, T, E, F, CF> Future for ConcurrentRetry<A, T, E, F, CF>
 where
     A: Attempt<T, E>,
     F: Future<Output = Result<T, E>> + Unpin,
-    FN: FnMut() -> F,
+    CF: FnMut() -> F,
 {
     type Output = F::Output;
 

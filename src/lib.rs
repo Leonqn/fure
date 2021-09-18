@@ -1,18 +1,31 @@
 use std::future::{ready, Future, Ready};
 use std::{pin::Pin, time::Duration};
 
-use future::ParallelRetry;
+use future::ConcurrentRetry;
 use tokio::time::{sleep, Sleep};
 
 pub mod future;
 
-pub fn retry<A, T, E, F, FN>(create_f: FN, attempt: A) -> ParallelRetry<A, T, E, F, FN>
+pub fn retry<A, T, E, F, CF>(create_f: CF, attempt: A) -> ConcurrentRetry<A, T, E, F, CF>
 where
     A: Attempt<T, E>,
     F: Future<Output = Result<T, E>> + Unpin,
+    CF: CreateFuture<F>,
+{
+    ConcurrentRetry::new(attempt, create_f, vec![], None)
+}
+
+pub trait CreateFuture<F> {
+    fn create(&mut self) -> F;
+}
+
+impl<F, FN> CreateFuture<F> for FN
+where
     FN: FnMut() -> F,
 {
-    ParallelRetry::new(attempt, create_f, vec![], None)
+    fn create(&mut self) -> F {
+        (self)()
+    }
 }
 
 pub trait Attempt<T, E>: Sized {
