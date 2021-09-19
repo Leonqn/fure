@@ -101,7 +101,10 @@ where
                             self.delay = None;
                             self.poll_retry(cx);
                         }
-                        None => self.delay = None,
+                        None => {
+                            self.retry = None;
+                            self.delay = None;
+                        }
                     },
                     Poll::Pending => {
                         return Poll::Pending;
