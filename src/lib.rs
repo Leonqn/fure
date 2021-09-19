@@ -7,13 +7,13 @@ use std::future::Future;
 pub mod future;
 pub mod policies;
 
-pub fn retry<R, T, E, F, CF>(create_f: CF, attempt: R) -> ConcurrentRetry<R, T, E, F, CF>
+pub fn retry<R, T, E, F, CF>(create_f: CF, retry: R) -> ConcurrentRetry<R, T, E, F, CF>
 where
     R: RetryPolicy<T, E>,
     F: Future<Output = Result<T, E>> + Unpin,
     CF: CreateFuture<F>,
 {
-    ConcurrentRetry::new(attempt, create_f, vec![], None)
+    ConcurrentRetry::new(retry, create_f, vec![], None)
 }
 
 pub trait CreateFuture<F> {
