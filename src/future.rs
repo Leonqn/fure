@@ -82,10 +82,9 @@ where
         self.poll_retry(cx);
         loop {
             while let Some(r) = poll_vec(&mut self.running_futs, cx) {
-                match self.retry.as_ref().and_then(|x| x.retry(Some(&r))) {
+                match self.retry.take().and_then(|x| x.retry(Some(&r))) {
                     Some(retry) => {
                         self.retry_fut = Some(retry);
-                        self.retry = None;
                         self.delay = None;
                         self.poll_retry(cx);
                     }
@@ -94,10 +93,9 @@ where
             }
             match self.delay.as_mut() {
                 Some(delay) => match poll_unpin(delay, cx) {
-                    Poll::Ready(_) => match self.retry.as_ref().and_then(|x| x.retry(None)) {
+                    Poll::Ready(_) => match self.retry.take().and_then(|x| x.retry(None)) {
                         Some(retry) => {
                             self.retry_fut = Some(retry);
-                            self.retry = None;
                             self.delay = None;
                             self.poll_retry(cx);
                         }

@@ -2,7 +2,9 @@ use std::{
     future::{pending, ready, Future, Pending, Ready},
     marker::PhantomData,
     pin::Pin,
+    process::Output,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use crate::{backoff::Backoff, RetryPolicy};
@@ -12,17 +14,17 @@ use super::RetryFailed;
 pub trait Retry<T, E>: Sized {
     type RetryFuture: Future<Output = Self> + Unpin;
 
-    fn retry(&self, result: &Result<T, E>) -> Option<Self::RetryFuture>;
+    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture>;
 }
 
-pub struct RetryBackoff<'a, R> {
+pub struct RetryBackoff<'a, R, I> {
     retry: R,
-    backoff: Backoff,
+    backoff: I,
     _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a, R> RetryBackoff<'a, R> {
-    pub fn new(retry: R, backoff: Backoff) -> Self {
+impl<'a, R, I> RetryBackoff<'a, R, I> {
+    pub fn new(retry: R, backoff: I) -> Self {
         Self {
             retry,
             backoff,
@@ -31,25 +33,28 @@ impl<'a, R> RetryBackoff<'a, R> {
     }
 }
 
-impl<'a, R, T, E> Retry<T, E> for RetryBackoff<'a, R>
+impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
 where
     R: Retry<T, E>,
     R::RetryFuture: 'a,
+    I: Iterator<Item = Duration> + 'a,
 {
     type RetryFuture = Pin<Box<dyn Future<Output = Self> + 'a>>;
 
-    fn retry(&self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
         let retry = self.retry.retry(result)?;
-        let backoff = self.backoff;
+        let mut backoff = self.backoff;
+        let delay = backoff.next();
         let retry = Box::pin(async move {
             let new_retry = retry.await;
+            if let Some(delay) = delay {
+                #[cfg(feature = "tokio")]
+                tokio::time::sleep(delay).await;
+                #[cfg(feature = "async-std")]
+                async_std::task::sleep(backoff).await;
+            }
 
-            #[cfg(feature = "tokio")]
-            tokio::time::sleep(backoff.delay()).await;
-            #[cfg(feature = "async-std")]
-            async_std::task::sleep(backoff.delay()).await;
-
-            Self::new(new_retry, backoff.next())
+            Self::new(new_retry, backoff)
         });
         Some(retry)
     }
@@ -76,7 +81,7 @@ where
         pending()
     }
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
         let result = result.expect("Result must be some");
         let retry_f = self.retry.retry(result)?;
         Some(SeqMap { retry_f })
@@ -86,7 +91,7 @@ where
 impl<T, E> Retry<T, E> for RetryFailed {
     type RetryFuture = Ready<Self>;
 
-    fn retry(&self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
         self.retry(Some(result)).map(ready)
     }
 }
@@ -147,9 +152,7 @@ mod tests {
                 create_fut,
                 Sequential::new(RetryBackoff::new(
                     RetryFailed::new(2),
-                    Backoff::Fixed {
-                        delay: Duration::from_millis(50),
-                    },
+                    std::iter::repeat(Duration::from_millis(100)),
                 )),
             )
             .await;

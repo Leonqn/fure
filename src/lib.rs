@@ -36,7 +36,7 @@ pub trait RetryPolicy<T, E>: Sized {
 
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture>;
+    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture>;
 }
 
 #[cfg(test)]
@@ -67,7 +67,7 @@ mod tests {
                 }
             }
 
-            fn retry(&self, _result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+            fn retry(self, _result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
                 if self.retry == 5 {
                     return None;
                 } else {
