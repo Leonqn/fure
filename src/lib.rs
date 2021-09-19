@@ -30,9 +30,10 @@ where
 }
 
 pub trait RetryPolicy<T, E>: Sized {
-    type DelayFuture: Future + Unpin;
+    type ForceRetryFuture: Future + Unpin;
+    type RetryFuture: Future<Output = Self> + Unpin;
 
-    fn force_retry_after(&self) -> Self::DelayFuture;
+    fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self>;
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture>;
 }

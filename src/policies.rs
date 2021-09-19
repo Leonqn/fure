@@ -20,16 +20,17 @@ impl Sequential {
 }
 
 impl<T, E> RetryPolicy<T, E> for Sequential {
-    type DelayFuture = Pending<()>;
-
-    fn force_retry_after(&self) -> Self::DelayFuture {
+    type ForceRetryFuture = Pending<()>;
+    type RetryFuture = Ready<Self>;
+    
+    fn force_retry_after(&self) -> Self::ForceRetryFuture {
         pending()
     }
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
-        Some(Self {
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+        Some(ready(Self {
             retry: self.retry.next(result)?,
-        })
+        }))
     }
 }
 
@@ -47,16 +48,17 @@ impl Concurrent {
 }
 
 impl<T, E> RetryPolicy<T, E> for Concurrent {
-    type DelayFuture = Ready<()>;
+    type ForceRetryFuture = Ready<()>;
+    type RetryFuture = Ready<Self>;
 
-    fn force_retry_after(&self) -> Self::DelayFuture {
+    fn force_retry_after(&self) -> Self::ForceRetryFuture {
         ready(())
     }
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
-        Some(Self {
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+        Some(ready(Self {
             retry: self.retry.next(result)?,
-        })
+        }))
     }
 }
 
@@ -77,24 +79,26 @@ impl DelayedConcurrent {
 
 impl<T, E> RetryPolicy<T, E> for DelayedConcurrent {
     #[cfg(feature = "tokio")]
-    type DelayFuture = Pin<Box<tokio::time::Sleep>>;
+    type ForceRetryFuture = Pin<Box<tokio::time::Sleep>>;
     #[cfg(feature = "tokio")]
-    fn force_retry_after(&self) -> Self::DelayFuture {
+    fn force_retry_after(&self) -> Self::ForceRetryFuture {
         Box::pin(tokio::time::sleep(self.force_retry_after))
     }
 
     #[cfg(feature = "async-std")]
     type DelayFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
     #[cfg(feature = "async-std")]
-    fn force_retry_after(&self) -> Self::DelayFuture {
+    fn force_retry_after(&self) -> Self::ForceRetryFuture {
         Box::pin(async_std::task::sleep(self.force_retry_after))
     }
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
-        Some(Self {
+    type RetryFuture = Ready<Self>;
+
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+        Some(ready(Self {
             retry: self.retry.next(result)?,
             force_retry_after: self.force_retry_after,
-        })
+        }))
     }
 }
 
@@ -118,7 +122,7 @@ impl RetryFailed {
 #[cfg(test)]
 mod tests {
     use std::{
-        future::{ready, Future},
+        future::{ready, Future, Ready},
         pin::Pin,
         sync::{Arc, Mutex},
         time::Duration,
@@ -135,9 +139,9 @@ mod tests {
         }
 
         impl<T, E> RetryPolicy<T, E> for RetryTest {
-            type DelayFuture = Pin<Box<dyn Future<Output = ()>>>;
-
-            fn force_retry_after(&self) -> Self::DelayFuture {
+            type ForceRetryFuture = Pin<Box<dyn Future<Output = ()>>>;
+            type RetryFuture = Ready<Self>;
+            fn force_retry_after(&self) -> Self::ForceRetryFuture {
                 if self.retry == 1 {
                     Box::pin(pending())
                 } else {
@@ -145,13 +149,13 @@ mod tests {
                 }
             }
 
-            fn retry(&self, _result: Option<&Result<T, E>>) -> Option<Self> {
+            fn retry(&self, _result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
                 if self.retry == 5 {
                     return None;
                 } else {
-                    Some(Self {
+                    Some(ready(Self {
                         retry: self.retry + 1,
-                    })
+                    }))
                 }
             }
         }

@@ -12,9 +12,10 @@ where
     R: RetryPolicy<T, E>,
 {
     retry: Option<R>,
+    retry_fut: Option<R::RetryFuture>,
     create_f: CF,
     running_futs: Vec<F>,
-    delay: Option<R::DelayFuture>,
+    delay: Option<R::ForceRetryFuture>,
 }
 
 impl<R, T, E, F, CF> ConcurrentRetry<R, T, E, F, CF>
@@ -25,14 +26,37 @@ where
         retry: R,
         create_f: CF,
         running_futs: Vec<F>,
-        delay: Option<R::DelayFuture>,
+        delay: Option<R::ForceRetryFuture>,
     ) -> Self {
         Self {
             retry: Some(retry),
             create_f,
             running_futs,
             delay,
+            retry_fut: None,
         }
+    }
+}
+
+impl<R, T, E, F, CF> ConcurrentRetry<R, T, E, F, CF>
+where
+    R: RetryPolicy<T, E>,
+    F: Future<Output = Result<T, E>> + Unpin,
+    CF: FnMut() -> F,
+{
+    fn try_retry(&mut self, mut retry: R::RetryFuture, cx: &mut Context) -> bool {
+        let retry = match poll_unpin(&mut retry, cx) {
+            Poll::Ready(r) => r,
+            Poll::Pending => {
+                self.retry_fut = Some(retry);
+                return false;
+            }
+        };
+        let f = (self.create_f)();
+        self.running_futs.push(f);
+        self.delay = Some(retry.force_retry_after());
+        self.retry = Some(retry);
+        true
     }
 }
 
@@ -56,15 +80,19 @@ where
             let f = (self.create_f)();
             self.running_futs.push(f)
         }
-
+        if let Some(retry_fut) = self.retry_fut.as_mut() {
+            match poll_unpin(retry_fut, cx) {
+                Poll::Ready(x) => self.retry = Some(x),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
         loop {
             while let Some(r) = poll_vec(&mut self.running_futs, cx) {
-                match self.retry.as_ref().and_then(|a| a.retry(Some(&r))) {
+                match self.retry.as_ref().and_then(|x| x.retry(Some(&r))) {
                     Some(retry) => {
-                        let f = (self.create_f)();
-                        self.running_futs.push(f);
-                        self.delay = Some(retry.force_retry_after());
-                        self.retry = Some(retry);
+                        if !self.try_retry(retry, cx) {
+                            return Poll::Pending;
+                        }
                     }
                     None => return Poll::Ready(r),
                 }
@@ -73,10 +101,9 @@ where
                 Some(delay) => match poll_unpin(delay, cx) {
                     Poll::Ready(_) => match self.retry.as_ref().and_then(|x| x.retry(None)) {
                         Some(retry) => {
-                            let f = (self.create_f)();
-                            self.running_futs.push(f);
-                            self.delay = Some(retry.force_retry_after());
-                            self.retry = Some(retry);
+                            if !self.try_retry(retry, cx) {
+                                return Poll::Pending;
+                            }
                         }
                         None => self.delay = None,
                     },
