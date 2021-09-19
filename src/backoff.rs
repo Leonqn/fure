@@ -38,9 +38,8 @@ impl Iterator for Backoff {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = (*self).next();
-        let cur = *self;
         *self = next;
-        Some(cur)
+        Some(next)
     }
 }
 
@@ -77,11 +76,11 @@ mod tests {
 
         assert_eq!(
             vec![
-                Duration::from_secs(1),
                 Duration::from_secs(2),
                 Duration::from_secs(4),
                 Duration::from_secs(8),
                 Duration::from_secs(16),
+                Duration::from_secs(32),
             ],
             backoff.take(5).map(Backoff::delay).collect::<Vec<_>>()
         )
@@ -96,9 +95,9 @@ mod tests {
 
         assert_eq!(
             vec![
-                Duration::from_secs(1),
                 Duration::from_secs(2),
                 Duration::from_secs(4),
+                Duration::from_secs(7),
                 Duration::from_secs(7),
                 Duration::from_secs(7),
             ],
