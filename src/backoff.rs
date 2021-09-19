@@ -11,24 +11,36 @@ pub enum Backoff {
     },
 }
 
-impl Iterator for Backoff {
-    type Item = Duration;
+impl Backoff {
+    pub fn delay(self) -> Duration {
+        match self {
+            Backoff::Fixed { delay } => delay,
+            Backoff::Exponential { delay, .. } => delay,
+        }
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match *self {
-            Backoff::Fixed { delay } => Some(delay),
-            Backoff::Exponential { max_delay, delay } => match delay.checked_mul(2) {
-                Some(new_delay) => {
-                    let new_delay = max_delay.filter(|m| *m < new_delay).unwrap_or(new_delay);
-                    *self = Backoff::Exponential {
-                        delay: new_delay,
-                        max_delay,
-                    };
-                    Some(delay)
-                }
-                None => max_delay,
+    pub fn next(self) -> Self {
+        match self {
+            Backoff::Fixed { delay } => Backoff::Fixed { delay },
+            Backoff::Exponential { delay, max_delay } => match delay.checked_mul(2) {
+                Some(new_delay) => Backoff::Exponential {
+                    delay: max_delay.filter(|m| *m < new_delay).unwrap_or(new_delay),
+                    max_delay,
+                },
+                None => Backoff::Exponential { delay, max_delay },
             },
         }
+    }
+}
+
+impl Iterator for Backoff {
+    type Item = Self;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = (*self).next();
+        let cur = *self;
+        *self = next;
+        Some(cur)
     }
 }
 
@@ -52,7 +64,7 @@ mod tests {
                 Duration::from_secs(1),
                 Duration::from_secs(1),
             ],
-            backoff.take(5).collect::<Vec<_>>()
+            backoff.take(5).map(Backoff::delay).collect::<Vec<_>>()
         )
     }
 
@@ -71,7 +83,7 @@ mod tests {
                 Duration::from_secs(8),
                 Duration::from_secs(16),
             ],
-            backoff.take(5).collect::<Vec<_>>()
+            backoff.take(5).map(Backoff::delay).collect::<Vec<_>>()
         )
     }
 
@@ -90,7 +102,7 @@ mod tests {
                 Duration::from_secs(7),
                 Duration::from_secs(7),
             ],
-            backoff.take(5).collect::<Vec<_>>()
+            backoff.take(5).map(Backoff::delay).collect::<Vec<_>>()
         )
     }
 }

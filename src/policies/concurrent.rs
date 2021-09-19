@@ -104,7 +104,7 @@ where
     }
 
     #[cfg(feature = "async-std")]
-    type DelayFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
+    type ForceRetryFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
     #[cfg(feature = "async-std")]
     fn force_retry_after(&self) -> Self::ForceRetryFuture {
         Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
