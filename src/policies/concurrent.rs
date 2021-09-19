@@ -8,7 +8,7 @@ use crate::RetryPolicy;
 use super::RetryFailed;
 
 pub trait Retry<T, E>: Sized {
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self>;
+    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
 }
 
 pub trait RetryDelayed<T, E>: Retry<T, E> {
@@ -16,7 +16,7 @@ pub trait RetryDelayed<T, E>: Retry<T, E> {
 }
 
 impl<T, E> Retry<T, E> for RetryFailed {
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self> {
+    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         self.retry(result)
     }
 }
@@ -38,7 +38,7 @@ impl<R, T, E> Retry<T, E> for RetryFailedDelayed<R>
 where
     R: Retry<T, E>,
 {
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self> {
+    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         let force_delay_after = self.force_delay_after;
         self.retry
             .retry(result)
@@ -74,7 +74,7 @@ where
         ready(())
     }
 
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
         Some(ready(Self {
             retry: self.retry.retry(result)?,
         }))
@@ -116,7 +116,7 @@ mod delayed {
 
         type RetryFuture = Ready<Self>;
 
-        fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+        fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
             Some(ready(Self {
                 retry: self.retry.retry(result)?,
             }))

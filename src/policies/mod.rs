@@ -11,7 +11,7 @@ impl RetryFailed {
         Self { max_retries }
     }
 
-    fn retry<T, E>(self, result: Option<&Result<T, E>>) -> Option<Self> {
+    fn retry<T, E>(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         match result {
             Some(Ok(_)) => None,
             _ => self.max_retries.checked_sub(1).map(Self::new),

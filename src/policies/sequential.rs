@@ -11,7 +11,7 @@ use super::RetryFailed;
 pub trait Retry<T, E>: Sized {
     type RetryFuture: Future<Output = Self> + Unpin;
 
-    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture>;
+    fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture>;
 }
 
 #[cfg(any(feature = "tokio", feature = "async-std"))]
@@ -43,7 +43,7 @@ mod retry_backoff {
     {
         type RetryFuture = Pin<Box<dyn Future<Output = Self> + Send + 'a>>;
 
-        fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
+        fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
             let retry = self.retry.retry(result)?;
             let mut backoff = self.backoff;
             let delay = backoff.next();
@@ -85,7 +85,7 @@ where
         pending()
     }
 
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
         let result = result.expect("Result must be some");
         let retry_f = self.retry.retry(result)?;
         Some(SeqMap { retry_f })
@@ -95,7 +95,7 @@ where
 impl<T, E> Retry<T, E> for RetryFailed {
     type RetryFuture = Ready<Self>;
 
-    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
+    fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
         self.retry(Some(result)).map(ready)
     }
 }

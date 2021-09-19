@@ -82,7 +82,7 @@ where
         self.poll_retry(cx);
         loop {
             while let Some(r) = poll_vec(&mut self.running_futs, cx) {
-                match self.retry.take().and_then(|x| x.retry(Some(&r))) {
+                match self.retry.take().and_then(|x| x.retry(Some(r.as_ref()))) {
                     Some(retry) => {
                         self.retry_fut = Some(retry);
                         self.delay = None;
