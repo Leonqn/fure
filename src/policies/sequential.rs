@@ -37,11 +37,11 @@ mod retry_backoff {
 
     impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
     where
-        R: Retry<T, E>,
-        R::RetryFuture: 'a,
-        I: Iterator<Item = Duration> + 'a,
+        R: Retry<T, E> + Send + 'static,
+        R::RetryFuture: Send + 'a,
+        I: Iterator<Item = Duration> + Send + 'a,
     {
-        type RetryFuture = Pin<Box<dyn Future<Output = Self> + 'a>>;
+        type RetryFuture = Pin<Box<dyn Future<Output = Self> + Send + 'a>>;
 
         fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
             let retry = self.retry.retry(result)?;
@@ -53,7 +53,7 @@ mod retry_backoff {
                     #[cfg(feature = "tokio")]
                     tokio::time::sleep(delay).await;
                     #[cfg(feature = "async-std")]
-                    async_std::task::sleep(backoff).await;
+                    async_std::task::sleep(delay).await;
                 }
 
                 Self::new(new_retry, backoff)
@@ -148,7 +148,7 @@ mod tests {
             };
             let now = Instant::now();
 
-            let _result = retry(
+            let _result = tokio::spawn(retry(
                 create_fut,
                 Sequential::new(RetryBackoff::new(
                     RetryFailed::new(2),
@@ -158,7 +158,7 @@ mod tests {
                         Some(Duration::from_secs(1)),
                     ),
                 )),
-            )
+            ))
             .await;
 
             assert!(now.elapsed() > Duration::from_millis(150))

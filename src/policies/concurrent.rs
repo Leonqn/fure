@@ -102,13 +102,13 @@ mod delayed {
     {
         #[cfg(feature = "tokio")]
         type ForceRetryFuture = Pin<Box<tokio::time::Sleep>>;
+        #[cfg(feature = "async-std")]
+        type ForceRetryFuture = Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
+
         #[cfg(feature = "tokio")]
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
             Box::pin(tokio::time::sleep(self.retry.force_retry_after()))
         }
-
-        #[cfg(feature = "async-std")]
-        type ForceRetryFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
         #[cfg(feature = "async-std")]
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
             Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
