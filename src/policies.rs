@@ -303,6 +303,8 @@ mod tests {
     }
 
     mod delayed_concurrent {
+        use std::time::Instant;
+
         use super::*;
 
         #[tokio::test]
@@ -377,15 +379,16 @@ mod tests {
                     }
                 })
             };
-
+            let now = Instant::now();
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(2, Duration::from_millis(1)),
+                DelayedConcurrent::new(2, Duration::from_millis(50)),
             )
             .await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 2);
+            assert!(now.elapsed() >= Duration::from_millis(50));
             assert!(result.is_ok());
         }
 
