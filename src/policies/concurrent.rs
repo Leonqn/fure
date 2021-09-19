@@ -1,53 +1,72 @@
 use std::{
-    future::{pending, ready, Pending, Ready},
+    future::{ready, Ready},
     pin::Pin,
     time::Duration,
 };
 
 use crate::RetryPolicy;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Sequential {
-    retry: RetryFailed,
+use super::RetryFailed;
+
+pub trait Retry<T, E>: Sized {
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self>;
 }
 
-impl Sequential {
-    pub fn new(max_retries: usize) -> Self {
+pub trait RetryDelayed<T, E>: Retry<T, E> {
+    fn force_retry_after(&self) -> Duration;
+}
+
+impl<T, E> Retry<T, E> for RetryFailed {
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
+        self.retry(result)
+    }
+}
+
+pub struct RetryFailedDelayed<R> {
+    retry: R,
+    force_delay_after: Duration,
+}
+
+impl<R> RetryFailedDelayed<R> {
+    pub fn new(retry: R, force_delay_after: Duration) -> Self {
         Self {
-            retry: RetryFailed::new(max_retries),
+            retry,
+            force_delay_after,
         }
     }
 }
-
-impl<T, E> RetryPolicy<T, E> for Sequential {
-    type ForceRetryFuture = Pending<()>;
-    type RetryFuture = Ready<Self>;
-    
-    fn force_retry_after(&self) -> Self::ForceRetryFuture {
-        pending()
+impl<R, T, E> Retry<T, E> for RetryFailedDelayed<R>
+where
+    R: Retry<T, E>,
+{
+    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
+        self.retry
+            .retry(result)
+            .map(|x| Self::new(x, self.force_delay_after))
     }
+}
 
-    fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
-        Some(ready(Self {
-            retry: self.retry.next(result)?,
-        }))
+impl<R: Retry<T, E>, T, E> RetryDelayed<T, E> for RetryFailedDelayed<R> {
+    fn force_retry_after(&self) -> Duration {
+        self.force_delay_after
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Concurrent {
-    retry: RetryFailed,
+pub struct Concurrent<R> {
+    retry: R,
 }
 
-impl Concurrent {
-    pub fn new(max_retries: usize) -> Self {
-        Self {
-            retry: RetryFailed::new(max_retries),
-        }
+impl<R> Concurrent<R> {
+    pub fn new(retry: R) -> Self {
+        Self { retry }
     }
 }
 
-impl<T, E> RetryPolicy<T, E> for Concurrent {
+impl<R, T, E> RetryPolicy<T, E> for Concurrent<R>
+where
+    R: Retry<T, E>,
+{
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
 
@@ -57,179 +76,60 @@ impl<T, E> RetryPolicy<T, E> for Concurrent {
 
     fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
         Some(ready(Self {
-            retry: self.retry.next(result)?,
+            retry: self.retry.retry(result)?,
         }))
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DelayedConcurrent {
-    retry: RetryFailed,
-    force_retry_after: Duration,
+pub struct DelayedConcurrent<R> {
+    retry: R,
 }
 
-impl DelayedConcurrent {
-    pub fn new(max_retries: usize, force_retry_after: Duration) -> Self {
-        Self {
-            retry: RetryFailed::new(max_retries),
-            force_retry_after,
-        }
+impl<R> DelayedConcurrent<R> {
+    pub fn new(retry: R) -> Self {
+        Self { retry }
     }
 }
 
-impl<T, E> RetryPolicy<T, E> for DelayedConcurrent {
+impl<R, T, E> RetryPolicy<T, E> for DelayedConcurrent<R>
+where
+    R: RetryDelayed<T, E>,
+{
     #[cfg(feature = "tokio")]
     type ForceRetryFuture = Pin<Box<tokio::time::Sleep>>;
     #[cfg(feature = "tokio")]
     fn force_retry_after(&self) -> Self::ForceRetryFuture {
-        Box::pin(tokio::time::sleep(self.force_retry_after))
+        Box::pin(tokio::time::sleep(self.retry.force_retry_after()))
     }
 
     #[cfg(feature = "async-std")]
     type DelayFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
     #[cfg(feature = "async-std")]
     fn force_retry_after(&self) -> Self::ForceRetryFuture {
-        Box::pin(async_std::task::sleep(self.force_retry_after))
+        Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
     }
 
     type RetryFuture = Ready<Self>;
 
     fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
         Some(ready(Self {
-            retry: self.retry.next(result)?,
-            force_retry_after: self.force_retry_after,
+            retry: self.retry.retry(result)?,
         }))
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct RetryFailed {
-    max_retries: usize,
-}
-
-impl RetryFailed {
-    fn new(max_retries: usize) -> Self {
-        Self { max_retries }
-    }
-    fn next<T, E>(&self, result: Option<&Result<T, E>>) -> Option<Self> {
-        match result {
-            Some(Ok(_)) => None,
-            _ => self.max_retries.checked_sub(1).map(Self::new),
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
+mod test {
     use std::{
-        future::{ready, Future, Ready},
-        pin::Pin,
         sync::{Arc, Mutex},
         time::Duration,
     };
 
-    use super::{Concurrent, DelayedConcurrent, Sequential};
-    use crate::{retry, RetryPolicy};
+    use super::{super::RetryFailed, Concurrent, DelayedConcurrent, RetryFailedDelayed};
+    use crate::retry;
     use std::future::pending;
-
-    #[tokio::test]
-    async fn should_drop_previous_delay_after_retry() {
-        struct RetryTest {
-            retry: usize,
-        }
-
-        impl<T, E> RetryPolicy<T, E> for RetryTest {
-            type ForceRetryFuture = Pin<Box<dyn Future<Output = ()>>>;
-            type RetryFuture = Ready<Self>;
-            fn force_retry_after(&self) -> Self::ForceRetryFuture {
-                if self.retry == 1 {
-                    Box::pin(pending())
-                } else {
-                    Box::pin(ready(()))
-                }
-            }
-
-            fn retry(&self, _result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
-                if self.retry == 5 {
-                    return None;
-                } else {
-                    Some(ready(Self {
-                        retry: self.retry + 1,
-                    }))
-                }
-            }
-        }
-        let call_count = Arc::new(Mutex::new(0));
-        let create_fut = || {
-            let call_count = call_count.clone();
-            Box::pin(async move {
-                let call = {
-                    let mut mutex_guard = call_count.lock().unwrap();
-                    *mutex_guard += 1;
-                    *mutex_guard
-                };
-                if call == 2 {
-                    tokio::task::yield_now().await;
-                    Err(())
-                } else if call == 3 {
-                    pending().await
-                } else {
-                    Err::<(), ()>(())
-                }
-            })
-        };
-
-        let _ = retry(create_fut, RetryTest { retry: 0 }).await;
-
-        let guard = call_count.lock().unwrap();
-        assert_eq!(*guard, 6);
-    }
-
-    mod sequential {
-        use super::*;
-
-        #[tokio::test]
-        async fn should_run_futures_sequentially() {
-            let call_count = Arc::new(Mutex::new(0));
-            let pass_allowed = Arc::new(Mutex::new(false));
-            let create_fut = {
-                let call_count = call_count.clone();
-                let pass_allowed = pass_allowed.clone();
-                move || {
-                    let call_count = call_count.clone();
-                    let pass_allowed = pass_allowed.clone();
-                    Box::pin(async move {
-                        {
-                            let mut mutex_guard = call_count.lock().unwrap();
-                            *mutex_guard += 1;
-                        }
-                        loop {
-                            {
-                                if *pass_allowed.lock().unwrap() {
-                                    break;
-                                }
-                            }
-                            tokio::task::yield_now().await
-                        }
-
-                        Err::<(), ()>(())
-                    })
-                }
-            };
-
-            tokio::spawn(async move { retry(create_fut, Sequential::new(1)).await });
-            tokio::task::yield_now().await;
-
-            {
-                let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 1);
-            }
-            *pass_allowed.lock().unwrap() = true;
-            tokio::task::yield_now().await;
-            let guard = call_count.lock().unwrap();
-            assert_eq!(*guard, 2);
-        }
-    }
+    use std::time::Instant;
 
     mod concurrent {
         use super::*;
@@ -246,7 +146,7 @@ mod tests {
                 })
             };
 
-            let result = retry(create_fut, Concurrent::new(2)).await;
+            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 1);
@@ -272,7 +172,7 @@ mod tests {
                 })
             };
 
-            let result = retry(create_fut, Concurrent::new(2)).await;
+            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 3);
@@ -298,7 +198,7 @@ mod tests {
                 })
             };
 
-            let result = retry(create_fut, Concurrent::new(2)).await;
+            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 2);
@@ -307,7 +207,6 @@ mod tests {
     }
 
     mod delayed_concurrent {
-        use std::time::Instant;
 
         use super::*;
 
@@ -329,7 +228,10 @@ mod tests {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(2, Duration::from_secs(10000)),
+                DelayedConcurrent::new(RetryFailedDelayed::new(
+                    RetryFailed::new(2),
+                    Duration::from_secs(10000),
+                )),
             )
             .await;
 
@@ -356,7 +258,10 @@ mod tests {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(2, Duration::from_secs(10000)),
+                DelayedConcurrent::new(RetryFailedDelayed::new(
+                    RetryFailed::new(2),
+                    Duration::from_secs(10000),
+                )),
             )
             .await;
 
@@ -386,7 +291,10 @@ mod tests {
             let now = Instant::now();
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(2, Duration::from_millis(50)),
+                DelayedConcurrent::new(RetryFailedDelayed::new(
+                    RetryFailed::new(2),
+                    Duration::from_millis(50),
+                )),
             )
             .await;
 
@@ -410,7 +318,10 @@ mod tests {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(2, Duration::from_millis(100000000)),
+                DelayedConcurrent::new(RetryFailedDelayed::new(
+                    RetryFailed::new(2),
+                    Duration::from_secs(10000),
+                )),
             )
             .await;
 
