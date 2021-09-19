@@ -1,13 +1,10 @@
 use std::{
     future::{pending, ready, Future, Pending, Ready},
-    marker::PhantomData,
     pin::Pin,
-    process::Output,
     task::{Context, Poll},
-    time::Duration,
 };
 
-use crate::{backoff::Backoff, RetryPolicy};
+use crate::RetryPolicy;
 
 use super::RetryFailed;
 
@@ -17,48 +14,55 @@ pub trait Retry<T, E>: Sized {
     fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture>;
 }
 
-pub struct RetryBackoff<'a, R, I> {
-    retry: R,
-    backoff: I,
-    _phantom: PhantomData<&'a ()>,
-}
+#[cfg(any(feature = "tokio", feature = "async-std"))]
+mod retry_backoff {
+    use super::*;
+    use std::{marker::PhantomData, time::Duration};
 
-impl<'a, R, I> RetryBackoff<'a, R, I> {
-    pub fn new(retry: R, backoff: I) -> Self {
-        Self {
-            retry,
-            backoff,
-            _phantom: Default::default(),
+    pub struct RetryBackoff<'a, R, I> {
+        retry: R,
+        backoff: I,
+        _phantom: PhantomData<&'a ()>,
+    }
+
+    impl<'a, R, I> RetryBackoff<'a, R, I> {
+        pub fn new(retry: R, backoff: I) -> Self {
+            Self {
+                retry,
+                backoff,
+                _phantom: Default::default(),
+            }
+        }
+    }
+
+    impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
+    where
+        R: Retry<T, E>,
+        R::RetryFuture: 'a,
+        I: Iterator<Item = Duration> + 'a,
+    {
+        type RetryFuture = Pin<Box<dyn Future<Output = Self> + 'a>>;
+
+        fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
+            let retry = self.retry.retry(result)?;
+            let mut backoff = self.backoff;
+            let delay = backoff.next();
+            let retry = Box::pin(async move {
+                let new_retry = retry.await;
+                if let Some(delay) = delay {
+                    #[cfg(feature = "tokio")]
+                    tokio::time::sleep(delay).await;
+                    #[cfg(feature = "async-std")]
+                    async_std::task::sleep(backoff).await;
+                }
+
+                Self::new(new_retry, backoff)
+            });
+            Some(retry)
         }
     }
 }
-
-impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
-where
-    R: Retry<T, E>,
-    R::RetryFuture: 'a,
-    I: Iterator<Item = Duration> + 'a,
-{
-    type RetryFuture = Pin<Box<dyn Future<Output = Self> + 'a>>;
-
-    fn retry(self, result: &Result<T, E>) -> Option<Self::RetryFuture> {
-        let retry = self.retry.retry(result)?;
-        let mut backoff = self.backoff;
-        let delay = backoff.next();
-        let retry = Box::pin(async move {
-            let new_retry = retry.await;
-            if let Some(delay) = delay {
-                #[cfg(feature = "tokio")]
-                tokio::time::sleep(delay).await;
-                #[cfg(feature = "async-std")]
-                async_std::task::sleep(backoff).await;
-            }
-
-            Self::new(new_retry, backoff)
-        });
-        Some(retry)
-    }
-}
+pub use retry_backoff::*;
 
 pub struct Sequential<R> {
     retry: R,
@@ -119,22 +123,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::sync::{Arc, Mutex};
 
     use crate::{
-        backoff::Backoff,
-        policies::{
-            sequential::{RetryBackoff, Sequential},
-            RetryFailed,
-        },
+        policies::{sequential::Sequential, RetryFailed},
         retry,
     };
 
+    #[cfg(any(feature = "tokio", feature = "async-std"))]
     mod retry_backoff {
-        use std::time::Duration;
+        use std::time::{Duration, Instant};
+
+        use crate::{backoff, policies::sequential::RetryBackoff};
 
         use super::*;
 
@@ -152,12 +152,16 @@ mod tests {
                 create_fut,
                 Sequential::new(RetryBackoff::new(
                     RetryFailed::new(2),
-                    std::iter::repeat(Duration::from_millis(100)),
+                    backoff::exponential(
+                        Duration::from_millis(50),
+                        2,
+                        Some(Duration::from_secs(1)),
+                    ),
                 )),
             )
             .await;
 
-            assert!(now.elapsed() > Duration::from_millis(100))
+            assert!(now.elapsed() > Duration::from_millis(150))
         }
     }
 

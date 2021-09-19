@@ -1,6 +1,5 @@
 use std::{
     future::{ready, Ready},
-    pin::Pin,
     time::Duration,
 };
 
@@ -81,56 +80,58 @@ where
         }))
     }
 }
+#[cfg(any(feature = "tokio", feature = "async-std"))]
+mod delayed {
+    use super::*;
+    use std::pin::Pin;
 
-#[derive(Debug, Clone, Copy)]
-pub struct DelayedConcurrent<R> {
-    retry: R,
-}
+    #[derive(Debug, Clone, Copy)]
+    pub struct DelayedConcurrent<R> {
+        retry: R,
+    }
 
-impl<R> DelayedConcurrent<R> {
-    pub fn new(retry: R) -> Self {
-        Self { retry }
+    impl<R> DelayedConcurrent<R> {
+        pub fn new(retry: R) -> Self {
+            Self { retry }
+        }
+    }
+
+    impl<R, T, E> RetryPolicy<T, E> for DelayedConcurrent<R>
+    where
+        R: RetryDelayed<T, E>,
+    {
+        #[cfg(feature = "tokio")]
+        type ForceRetryFuture = Pin<Box<tokio::time::Sleep>>;
+        #[cfg(feature = "tokio")]
+        fn force_retry_after(&self) -> Self::ForceRetryFuture {
+            Box::pin(tokio::time::sleep(self.retry.force_retry_after()))
+        }
+
+        #[cfg(feature = "async-std")]
+        type ForceRetryFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
+        #[cfg(feature = "async-std")]
+        fn force_retry_after(&self) -> Self::ForceRetryFuture {
+            Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
+        }
+
+        type RetryFuture = Ready<Self>;
+
+        fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
+            Some(ready(Self {
+                retry: self.retry.retry(result)?,
+            }))
+        }
     }
 }
-
-impl<R, T, E> RetryPolicy<T, E> for DelayedConcurrent<R>
-where
-    R: RetryDelayed<T, E>,
-{
-    #[cfg(feature = "tokio")]
-    type ForceRetryFuture = Pin<Box<tokio::time::Sleep>>;
-    #[cfg(feature = "tokio")]
-    fn force_retry_after(&self) -> Self::ForceRetryFuture {
-        Box::pin(tokio::time::sleep(self.retry.force_retry_after()))
-    }
-
-    #[cfg(feature = "async-std")]
-    type ForceRetryFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
-    #[cfg(feature = "async-std")]
-    fn force_retry_after(&self) -> Self::ForceRetryFuture {
-        Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
-    }
-
-    type RetryFuture = Ready<Self>;
-
-    fn retry(self, result: Option<&Result<T, E>>) -> Option<Self::RetryFuture> {
-        Some(ready(Self {
-            retry: self.retry.retry(result)?,
-        }))
-    }
-}
+pub use delayed::*;
 
 #[cfg(test)]
 mod test {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
+    use std::sync::{Arc, Mutex};
 
-    use super::{super::RetryFailed, Concurrent, DelayedConcurrent, RetryFailedDelayed};
+    use super::{super::RetryFailed, Concurrent};
     use crate::retry;
     use std::future::pending;
-    use std::time::Instant;
 
     mod concurrent {
         use super::*;
@@ -210,7 +211,12 @@ mod test {
         }
     }
 
+    #[cfg(any(feature = "tokio", feature = "async-std"))]
     mod delayed_concurrent {
+
+        use std::time::{Duration, Instant};
+
+        use crate::policies::concurrent::{DelayedConcurrent, RetryFailedDelayed};
 
         use super::*;
 
