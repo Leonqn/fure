@@ -41,15 +41,13 @@ pub trait RetryPolicy<T, E>: Sized {
 
 #[cfg(test)]
 mod tests {
+    use crate::{retry, RetryPolicy};
+    use std::future::pending;
     use std::{
         future::{ready, Future, Ready},
         pin::Pin,
         sync::{Arc, Mutex},
     };
-
-    // use super::Sequential;
-    use crate::{retry, RetryPolicy};
-    use std::future::pending;
 
     #[tokio::test]
     async fn should_drop_previous_delay_after_retry() {

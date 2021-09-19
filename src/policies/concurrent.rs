@@ -140,6 +140,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
                     Ok::<(), ()>(())
@@ -159,6 +160,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let call = {
                         let mut mutex_guard = call_count.lock().unwrap();
                         *mutex_guard += 1;
@@ -185,6 +187,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let call = {
                         let mut mutex_guard = call_count.lock().unwrap();
                         *mutex_guard += 1;
@@ -216,6 +219,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
                     if *mutex_guard == 1 {
@@ -246,6 +250,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
                     if *mutex_guard == 1 {
@@ -276,6 +281,7 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
                     let call_count = {
                         let mut mutex_guard = call_count.lock().unwrap();
                         *mutex_guard += 1;
@@ -310,6 +316,8 @@ mod test {
             let create_fut = || {
                 let call_count = call_count.clone();
                 Box::pin(async move {
+                    tokio::task::yield_now().await;
+
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
                     Ok::<_, ()>(())

@@ -135,7 +135,12 @@ mod tests {
 
         #[tokio::test]
         async fn should_run_next_after_backoff() {
-            let create_fut = || Box::pin(async move { Err::<(), ()>(()) });
+            let create_fut = || {
+                Box::pin(async move {
+                    tokio::task::yield_now().await;
+                    Err::<(), ()>(())
+                })
+            };
             let now = Instant::now();
 
             let _result = retry(
