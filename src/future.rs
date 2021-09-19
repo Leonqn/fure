@@ -60,27 +60,26 @@ where
         loop {
             while let Some(r) = poll_vec(&mut self.running_futs, cx) {
                 match self.retry.as_ref().and_then(|a| a.retry(Some(&r))) {
-                    Some(a) => {
+                    Some(retry) => {
                         let f = (self.create_f)();
                         self.running_futs.push(f);
-                        self.retry = Some(a);
-                        self.delay = self.retry.as_ref().map(|x| x.force_retry_after());
+                        self.delay = Some(retry.force_retry_after());
+                        self.retry = Some(retry);
                     }
                     None => return Poll::Ready(r),
                 }
             }
             match self.delay.as_mut() {
                 Some(delay) => match poll_unpin(delay, cx) {
-                    Poll::Ready(_) => {
-                        if let Some(retry) = self.retry.as_ref().and_then(|x| x.retry(None)) {
+                    Poll::Ready(_) => match self.retry.as_ref().and_then(|x| x.retry(None)) {
+                        Some(retry) => {
                             let f = (self.create_f)();
+                            self.running_futs.push(f);
                             self.delay = Some(retry.force_retry_after());
                             self.retry = Some(retry);
-                            self.running_futs.push(f);
-                        } else {
-                            self.delay = None
                         }
-                    }
+                        None => self.delay = None,
+                    },
                     Poll::Pending => {
                         return Poll::Pending;
                     }
