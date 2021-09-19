@@ -37,7 +37,7 @@ mod retry_backoff {
 
     impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
     where
-        R: Retry<T, E> + Send + 'static,
+        R: Retry<T, E> + Send + 'a,
         R::RetryFuture: Send + 'a,
         I: Iterator<Item = Duration> + Send + 'a,
     {
