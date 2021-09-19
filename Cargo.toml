@@ -10,7 +10,6 @@ tokio = { version = "1", features = [ "time" ], default-features = false, option
 
 [dev-dependencies]
 tokio = { version = "1", features = [ "time", "macros", "rt" ], default-features = false }
-futures-util = "0.3"
 
 [features]
 default = [ "tokio" ]

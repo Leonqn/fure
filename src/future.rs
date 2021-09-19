@@ -4,30 +4,31 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::Attempt;
+use crate::RetryPolicy;
 
-pub struct ConcurrentRetry<A, T, E, F, CF>
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct ConcurrentRetry<R, T, E, F, CF>
 where
-    A: Attempt<T, E>,
+    R: RetryPolicy<T, E>,
 {
-    attempt: Option<A>,
+    retry: Option<R>,
     create_f: CF,
     running_futs: Vec<F>,
-    delay: Option<A::DelayFuture>,
+    delay: Option<R::DelayFuture>,
 }
 
-impl<A, T, E, F, CF> ConcurrentRetry<A, T, E, F, CF>
+impl<R, T, E, F, CF> ConcurrentRetry<R, T, E, F, CF>
 where
-    A: Attempt<T, E>,
+    R: RetryPolicy<T, E>,
 {
     pub(crate) fn new(
-        attempt: A,
+        retry: R,
         create_f: CF,
         running_futs: Vec<F>,
-        delay: Option<A::DelayFuture>,
+        delay: Option<R::DelayFuture>,
     ) -> Self {
         Self {
-            attempt: Some(attempt),
+            retry: Some(retry),
             create_f,
             running_futs,
             delay,
@@ -35,16 +36,16 @@ where
     }
 }
 
-impl<A, T, E, F, CF> Unpin for ConcurrentRetry<A, T, E, F, CF>
+impl<R, T, E, F, CF> Unpin for ConcurrentRetry<R, T, E, F, CF>
 where
-    A: Attempt<T, E>,
+    R: RetryPolicy<T, E>,
     F: Unpin,
 {
 }
 
-impl<A, T, E, F, CF> Future for ConcurrentRetry<A, T, E, F, CF>
+impl<R, T, E, F, CF> Future for ConcurrentRetry<R, T, E, F, CF>
 where
-    A: Attempt<T, E>,
+    R: RetryPolicy<T, E>,
     F: Future<Output = Result<T, E>> + Unpin,
     CF: FnMut() -> F,
 {
@@ -58,11 +59,12 @@ where
 
         loop {
             while let Some(r) = poll_vec(&mut self.running_futs, cx) {
-                match self.attempt.as_ref().and_then(|a| a.next(Some(&r))) {
+                match self.retry.as_ref().and_then(|a| a.retry(Some(&r))) {
                     Some(a) => {
                         let f = (self.create_f)();
                         self.running_futs.push(f);
-                        self.attempt = Some(a)
+                        self.retry = Some(a);
+                        self.delay = self.retry.as_ref().map(|x| x.force_retry_after());
                     }
                     None => return Poll::Ready(r),
                 }
@@ -70,11 +72,13 @@ where
             match self.delay.as_mut() {
                 Some(delay) => match poll_unpin(delay, cx) {
                     Poll::Ready(_) => {
-                        self.attempt = self.attempt.as_ref().and_then(|x| x.next(None));
-                        self.delay = None;
-                        if self.attempt.is_some() {
-                            let send_f = (self.create_f)();
-                            self.running_futs.push(send_f);
+                        if let Some(retry) = self.retry.as_ref().and_then(|x| x.retry(None)) {
+                            let f = (self.create_f)();
+                            self.delay = Some(retry.force_retry_after());
+                            self.retry = Some(retry);
+                            self.running_futs.push(f);
+                        } else {
+                            self.delay = None
                         }
                     }
                     Poll::Pending => {
@@ -82,7 +86,7 @@ where
                     }
                 },
                 None => {
-                    self.delay = self.attempt.as_ref().map(|x| x.delay());
+                    self.delay = self.retry.as_ref().map(|x| x.force_retry_after());
                     if self.delay.is_none() {
                         return Poll::Pending;
                     }
