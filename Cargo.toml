@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "1", features = [ "time" ], default-features = false, optional = true }
+async-std = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = [ "time", "macros", "rt" ], default-features = false }

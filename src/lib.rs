@@ -1,3 +1,6 @@
+#[cfg(any(all(feature = "tokio", feature = "async-std"),))]
+compile_error!("`tokio` and `async-std` features must not be enabled together");
+
 use future::ConcurrentRetry;
 use std::future::Future;
 

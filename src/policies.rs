@@ -4,8 +4,6 @@ use std::{
     time::Duration,
 };
 
-use tokio::time::{sleep, Sleep};
-
 use crate::RetryPolicy;
 
 #[derive(Debug, Clone, Copy)]
@@ -63,13 +61,11 @@ impl<T, E> RetryPolicy<T, E> for Concurrent {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[cfg(feature = "tokio")]
 pub struct DelayedConcurrent {
     retry: RetryFailed,
     force_retry_after: Duration,
 }
 
-#[cfg(feature = "tokio")]
 impl DelayedConcurrent {
     pub fn new(max_retries: usize, force_retry_after: Duration) -> Self {
         Self {
@@ -79,12 +75,19 @@ impl DelayedConcurrent {
     }
 }
 
-#[cfg(feature = "tokio")]
 impl<T, E> RetryPolicy<T, E> for DelayedConcurrent {
-    type DelayFuture = Pin<Box<Sleep>>;
-
+    #[cfg(feature = "tokio")]
+    type DelayFuture = Pin<Box<tokio::time::Sleep>>;
+    #[cfg(feature = "tokio")]
     fn force_retry_after(&self) -> Self::DelayFuture {
-        Box::pin(sleep(self.force_retry_after))
+        Box::pin(tokio::time::sleep(self.force_retry_after))
+    }
+
+    #[cfg(feature = "async-std")]
+    type DelayFuture = Pin<Box<dyn std::future::Future<Output = ()>>>;
+    #[cfg(feature = "async-std")]
+    fn force_retry_after(&self) -> Self::DelayFuture {
+        Box::pin(async_std::task::sleep(self.force_retry_after))
     }
 
     fn retry(&self, result: Option<&Result<T, E>>) -> Option<Self> {
@@ -298,6 +301,7 @@ mod tests {
             assert!(result.is_ok());
         }
     }
+
     mod delayed_concurrent {
         use super::*;
 
