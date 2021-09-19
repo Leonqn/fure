@@ -6,6 +6,7 @@ use std::future::Future;
 
 pub mod future;
 pub mod policies;
+pub mod backoff;
 
 pub fn retry<R, T, E, F, CF>(create_f: CF, retry: R) -> ConcurrentRetry<R, T, E, F, CF>
 where
