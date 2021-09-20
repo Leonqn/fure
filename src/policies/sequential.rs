@@ -16,8 +16,6 @@ pub trait SequentialPolicy<T, E>: Sized {
 
 #[cfg(any(feature = "tokio", feature = "async-std"))]
 mod retry_backoff {
-    use pin_project_lite::pin_project;
-
     use super::*;
     use std::time::Duration;
 
