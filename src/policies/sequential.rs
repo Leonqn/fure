@@ -135,7 +135,7 @@ where
     }
 
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-        let result = result.expect("Result in sequaential policy must be some");
+        let result = result.expect("Result in sequential policy must be some");
         let policy_f = self.policy.retry(result)?;
         Some(SeqMap { policy_f })
     }
