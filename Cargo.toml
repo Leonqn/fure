@@ -12,7 +12,7 @@ rand = { version = "0.8", optional = true }
 pin-project-lite = "0.2"
 
 [dev-dependencies]
-tokio = { version = "1", features = [ "time", "macros", "rt" ], default-features = false }
+tokio = { version = "1", features = [ "time", "rt" ], default-features = false }
 
 [features]
 default = [ "tokio" ]
