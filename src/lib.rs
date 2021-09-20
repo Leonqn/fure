@@ -11,10 +11,10 @@ pub mod policies;
 pub fn retry<R, T, E, F, CF>(create_f: CF, retry: R) -> ConcurrentRetry<R, T, E, F, CF>
 where
     R: RetryPolicy<T, E>,
-    F: Future<Output = Result<T, E>> + Unpin,
+    F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {
-    ConcurrentRetry::new(retry, create_f, vec![], None)
+    ConcurrentRetry::new(retry, create_f)
 }
 
 pub trait CreateFuture<F> {
