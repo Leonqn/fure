@@ -1,5 +1,5 @@
 [package]
-name = "futures-retry-concurrent"
+name = "fure"
 version = "0.1.0"
 edition = "2018"
 
