@@ -149,7 +149,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 1);
@@ -176,7 +176,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 3);
@@ -203,7 +203,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 2);
@@ -240,7 +240,7 @@ mod test {
             let result = retry(
                 create_fut,
                 DelayedConcurrentRetry::new(IntervalPolicy::new(
-                    RetryFailed::new(2),
+                    AttemptsPolicy::new(2),
                     Duration::from_secs(10000),
                 )),
             )
@@ -271,7 +271,7 @@ mod test {
             let result = retry(
                 create_fut,
                 DelayedConcurrentRetry::new(IntervalPolicy::new(
-                    RetryFailed::new(2),
+                    AttemptsPolicy::new(2),
                     Duration::from_secs(10000),
                 )),
             )
@@ -305,7 +305,7 @@ mod test {
             let result = retry(
                 create_fut,
                 DelayedConcurrentRetry::new(IntervalPolicy::new(
-                    RetryFailed::new(2),
+                    AttemptsPolicy::new(2),
                     Duration::from_millis(50),
                 )),
             )
@@ -334,7 +334,7 @@ mod test {
             let result = retry(
                 create_fut,
                 DelayedConcurrentRetry::new(IntervalPolicy::new(
-                    RetryFailed::new(2),
+                    AttemptsPolicy::new(2),
                     Duration::from_secs(10000),
                 )),
             )
