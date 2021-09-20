@@ -173,7 +173,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(any(feature = "tokio", feature = "async-std"), test))]
 mod tests {
     use std::sync::{Arc, Mutex};
 
@@ -183,7 +183,6 @@ mod tests {
         retry,
     };
 
-    #[cfg(any(feature = "tokio", feature = "async-std"))]
     mod retry_backoff {
         use std::time::{Duration, Instant};
 
@@ -256,14 +255,14 @@ mod tests {
                 crate::tests::spawn(async move {
                     retry(create_fut, SequentialRetry::new(AttemptsPolicy::new(1))).await
                 });
-                crate::tests::sleep(Duration::from_millis(10)).await;
+                crate::sleep::sleep(Duration::from_millis(10)).await;
 
                 {
                     let guard = call_count.lock().unwrap();
                     assert_eq!(*guard, 1);
                 }
                 *pass_allowed.lock().unwrap() = true;
-                crate::tests::sleep(Duration::from_millis(10)).await;
+                crate::sleep::sleep(Duration::from_millis(10)).await;
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
             })
