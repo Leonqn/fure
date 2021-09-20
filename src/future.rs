@@ -83,9 +83,8 @@ where
             let f = (this.create_f)();
             this.running_futs.push(f)
         }
-
+        self.as_mut().poll_retry(cx);
         loop {
-            self.as_mut().poll_retry(cx);
             {
                 while let Some(r) = poll_vec(self.as_mut().project().running_futs, cx) {
                     let mut this = self.as_mut().project();
