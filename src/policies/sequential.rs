@@ -4,11 +4,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::RetryPolicy;
+use crate::Policy;
 
 use super::RetryFailed;
 
-pub trait Retry<T, E>: Sized {
+pub trait SequentialPolicy<T, E>: Sized {
     type RetryFuture: Future<Output = Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture>;
@@ -35,9 +35,9 @@ mod retry_backoff {
         }
     }
 
-    impl<'a, R, I, T, E> Retry<T, E> for RetryBackoff<'a, R, I>
+    impl<'a, R, I, T, E> SequentialPolicy<T, E> for RetryBackoff<'a, R, I>
     where
-        R: Retry<T, E> + Send + 'a,
+        R: SequentialPolicy<T, E> + Send + 'a,
         R::RetryFuture: Send + 'a,
         I: Iterator<Item = Duration> + Send + 'a,
     {
@@ -74,9 +74,9 @@ impl<R> Sequential<R> {
     }
 }
 
-impl<R, T, E> RetryPolicy<T, E> for Sequential<R>
+impl<R, T, E> Policy<T, E> for Sequential<R>
 where
-    R: Retry<T, E>,
+    R: SequentialPolicy<T, E>,
 {
     type ForceRetryFuture = Pending<()>;
     type RetryFuture = SeqMap<R, T, E>;
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<T, E> Retry<T, E> for RetryFailed {
+impl<T, E> SequentialPolicy<T, E> for RetryFailed {
     type RetryFuture = Ready<Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
@@ -103,7 +103,7 @@ impl<T, E> Retry<T, E> for RetryFailed {
 pin_project_lite::pin_project! {
     pub struct SeqMap<R, T, E>
     where
-        R: Retry<T, E>,
+        R: SequentialPolicy<T, E>,
     {
         #[pin]
         retry_f: R::RetryFuture,
@@ -112,7 +112,7 @@ pin_project_lite::pin_project! {
 
 impl<R, T, E> Future for SeqMap<R, T, E>
 where
-    R: Retry<T, E>,
+    R: SequentialPolicy<T, E>,
 {
     type Output = Sequential<R>;
 

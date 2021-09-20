@@ -10,7 +10,7 @@ pub mod policies;
 
 pub fn retry<R, T, E, F, CF>(create_f: CF, retry: R) -> ConcurrentRetry<R, T, E, F, CF>
 where
-    R: RetryPolicy<T, E>,
+    R: Policy<T, E>,
     F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-pub trait RetryPolicy<T, E>: Sized {
+pub trait Policy<T, E>: Sized {
     type ForceRetryFuture: Future;
     type RetryFuture: Future<Output = Self>;
 
@@ -41,7 +41,7 @@ pub trait RetryPolicy<T, E>: Sized {
 
 #[cfg(test)]
 mod tests {
-    use crate::{retry, RetryPolicy};
+    use crate::{retry, Policy};
     use std::future::pending;
     use std::{
         future::{ready, Future, Ready},
@@ -55,7 +55,7 @@ mod tests {
             retry: usize,
         }
 
-        impl<T, E> RetryPolicy<T, E> for RetryTest {
+        impl<T, E> Policy<T, E> for RetryTest {
             type ForceRetryFuture = Pin<Box<dyn Future<Output = ()>>>;
             type RetryFuture = Ready<Self>;
 

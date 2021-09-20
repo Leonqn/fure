@@ -3,19 +3,19 @@ use std::{
     time::Duration,
 };
 
-use crate::RetryPolicy;
+use crate::Policy;
 
 use super::RetryFailed;
 
-pub trait Retry<T, E>: Sized {
+pub trait ConcurrentPolicy<T, E>: Sized {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
 }
 
-pub trait RetryDelayed<T, E>: Retry<T, E> {
+pub trait DelayedConcurrentPolicy<T, E>: ConcurrentPolicy<T, E> {
     fn force_retry_after(&self) -> Duration;
 }
 
-impl<T, E> Retry<T, E> for RetryFailed {
+impl<T, E> ConcurrentPolicy<T, E> for RetryFailed {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         self.retry(result)
     }
@@ -34,9 +34,9 @@ impl<R> RetryFailedDelayed<R> {
         }
     }
 }
-impl<R, T, E> Retry<T, E> for RetryFailedDelayed<R>
+impl<R, T, E> ConcurrentPolicy<T, E> for RetryFailedDelayed<R>
 where
-    R: Retry<T, E>,
+    R: ConcurrentPolicy<T, E>,
 {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         let force_delay_after = self.force_delay_after;
@@ -46,7 +46,7 @@ where
     }
 }
 
-impl<R: Retry<T, E>, T, E> RetryDelayed<T, E> for RetryFailedDelayed<R> {
+impl<R: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for RetryFailedDelayed<R> {
     fn force_retry_after(&self) -> Duration {
         self.force_delay_after
     }
@@ -63,9 +63,9 @@ impl<R> Concurrent<R> {
     }
 }
 
-impl<R, T, E> RetryPolicy<T, E> for Concurrent<R>
+impl<R, T, E> Policy<T, E> for Concurrent<R>
 where
-    R: Retry<T, E>,
+    R: ConcurrentPolicy<T, E>,
 {
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
@@ -95,9 +95,9 @@ mod delayed {
         }
     }
 
-    impl<R, T, E> RetryPolicy<T, E> for DelayedConcurrent<R>
+    impl<R, T, E> Policy<T, E> for DelayedConcurrent<R>
     where
-        R: RetryDelayed<T, E>,
+        R: DelayedConcurrentPolicy<T, E>,
     {
         #[cfg(feature = "tokio")]
         type ForceRetryFuture = tokio::time::Sleep;

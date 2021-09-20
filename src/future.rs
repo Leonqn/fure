@@ -6,7 +6,7 @@ use std::{
 
 use pin_project_lite::pin_project;
 
-use crate::{CreateFuture, RetryPolicy};
+use crate::{CreateFuture, Policy};
 
 macro_rules! try_retry {
     ($retry:expr, $result:expr) => {
@@ -30,7 +30,7 @@ pin_project! {
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct ConcurrentRetry<R, T, E, F, CF>
     where
-        R: RetryPolicy<T, E>,
+        R: Policy<T, E>,
     {
         create_f: CF,
         #[pin]
@@ -42,7 +42,7 @@ pin_project! {
 
 impl<R, T, E, F, CF> ConcurrentRetry<R, T, E, F, CF>
 where
-    R: RetryPolicy<T, E>,
+    R: Policy<T, E>,
 {
     pub(crate) fn new(retry: R, create_f: CF) -> Self {
         Self {
@@ -55,7 +55,7 @@ where
 
 impl<R, T, E, F, CF> Future for ConcurrentRetry<R, T, E, F, CF>
 where
-    R: RetryPolicy<T, E>,
+    R: Policy<T, E>,
     F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {
@@ -111,7 +111,7 @@ pin_project! {
     #[project = FutureStateProj]
     enum FutureState<R, T, E>
     where
-        R: RetryPolicy<T, E>,
+        R: Policy<T, E>,
         {
             CreateFut { retry: Option<R> },
             WaitingDelay { #[pin] delay: R::ForceRetryFuture, retry: Option<R> },
