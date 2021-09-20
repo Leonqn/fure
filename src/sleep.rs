@@ -1,7 +1,5 @@
 #[cfg(feature = "tokio")]
-pub fn sleep(duration: std::time::Duration) -> Sleep {
-    tokio::time::sleep(duration)
-}
+pub use tokio::time::sleep;
 
 #[cfg(feature = "async-std")]
 pub fn sleep(duration: std::time::Duration) -> Sleep {

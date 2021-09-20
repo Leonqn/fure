@@ -77,6 +77,12 @@ mod tests {
     #[cfg(all(feature = "async-std", test))]
     pub use async_std::task::yield_now;
 
+    #[cfg(all(not(feature = "async-std"), test))]
+    pub use tokio::time::sleep;
+
+    #[cfg(all(feature = "async-std", test))]
+    pub use crate::sleep::sleep;
+
     #[test]
     fn should_drop_previous_delay_after_retry() {
         struct RetryTest {
