@@ -80,7 +80,7 @@ mod tests {
         let call_count = Arc::new(Mutex::new(0));
         let create_fut = || {
             let call_count = call_count.clone();
-            Box::pin(async move {
+            async move {
                 let call = {
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
@@ -94,7 +94,7 @@ mod tests {
                 } else {
                     Err::<(), ()>(())
                 }
-            })
+            }
         };
 
         let _ = retry(create_fut, RetryTest { retry: 0 }).await;

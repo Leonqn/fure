@@ -141,12 +141,12 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
                     Ok::<(), ()>(())
-                })
+                }
             };
 
             let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
@@ -161,7 +161,7 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let call = {
                         let mut mutex_guard = call_count.lock().unwrap();
@@ -173,7 +173,7 @@ mod test {
                     } else {
                         pending().await
                     }
-                })
+                }
             };
 
             let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
@@ -188,7 +188,7 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let call = {
                         let mut mutex_guard = call_count.lock().unwrap();
@@ -200,7 +200,7 @@ mod test {
                     } else {
                         pending().await
                     }
-                })
+                }
             };
 
             let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
@@ -225,7 +225,7 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
@@ -234,7 +234,7 @@ mod test {
                     } else {
                         Ok(())
                     }
-                })
+                }
             };
 
             let result = retry(
@@ -256,7 +256,7 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let mut mutex_guard = call_count.lock().unwrap();
                     *mutex_guard += 1;
@@ -265,7 +265,7 @@ mod test {
                     } else {
                         Err(*mutex_guard)
                     }
-                })
+                }
             };
 
             let result = retry(
@@ -287,7 +287,7 @@ mod test {
             let call_count = Arc::new(Mutex::new(0));
             let create_fut = || {
                 let call_count = call_count.clone();
-                Box::pin(async move {
+                async move {
                     tokio::task::yield_now().await;
                     let call_count = {
                         let mut mutex_guard = call_count.lock().unwrap();
@@ -299,7 +299,7 @@ mod test {
                     } else {
                         Ok(())
                     }
-                })
+                }
             };
             let now = Instant::now();
             let result = retry(

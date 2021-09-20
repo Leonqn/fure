@@ -143,11 +143,9 @@ mod tests {
 
         #[tokio::test]
         async fn should_run_next_after_backoff() {
-            let create_fut = || {
-                Box::pin(async move {
-                    tokio::task::yield_now().await;
-                    Err::<(), ()>(())
-                })
+            let create_fut = || async move {
+                tokio::task::yield_now().await;
+                Err::<(), ()>(())
             };
             let now = Instant::now();
 
@@ -181,7 +179,7 @@ mod tests {
                 move || {
                     let call_count = call_count.clone();
                     let pass_allowed = pass_allowed.clone();
-                    Box::pin(async move {
+                    async move {
                         {
                             let mut mutex_guard = call_count.lock().unwrap();
                             *mutex_guard += 1;
@@ -196,7 +194,7 @@ mod tests {
                         }
 
                         Err::<(), ()>(())
-                    })
+                    }
                 }
             };
 
