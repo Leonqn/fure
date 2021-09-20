@@ -1,20 +1,20 @@
 #[cfg(all(feature = "tokio", feature = "async-std"))]
 compile_error!("`tokio` and `async-std` features must not be enabled together");
 
-use future::ConcurrentRetry;
+use future::Retry;
 use std::future::Future;
 
 pub mod backoff;
 pub mod future;
 pub mod policies;
 
-pub fn retry<R, T, E, F, CF>(create_f: CF, retry: R) -> ConcurrentRetry<R, T, E, F, CF>
+pub fn retry<R, T, E, F, CF>(create_f: CF, policy: R) -> Retry<R, T, E, F, CF>
 where
     R: Policy<T, E>,
     F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {
-    ConcurrentRetry::new(retry, create_f)
+    Retry::new(policy, create_f)
 }
 
 pub trait CreateFuture<F> {
