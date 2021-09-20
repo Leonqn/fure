@@ -9,7 +9,7 @@ use crate::RetryPolicy;
 use super::RetryFailed;
 
 pub trait Retry<T, E>: Sized {
-    type RetryFuture: Future<Output = Self> + Unpin;
+    type RetryFuture: Future<Output = Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture>;
 }
@@ -100,11 +100,14 @@ impl<T, E> Retry<T, E> for RetryFailed {
     }
 }
 
-pub struct SeqMap<R, T, E>
-where
-    R: Retry<T, E>,
-{
-    retry_f: R::RetryFuture,
+pin_project_lite::pin_project! {
+    pub struct SeqMap<R, T, E>
+    where
+        R: Retry<T, E>,
+    {
+        #[pin]
+        retry_f: R::RetryFuture,
+    }
 }
 
 impl<R, T, E> Future for SeqMap<R, T, E>
@@ -113,8 +116,8 @@ where
 {
     type Output = Sequential<R>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.retry_f).poll(cx) {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.project().retry_f.poll(cx) {
             Poll::Ready(retry) => Poll::Ready(Sequential { retry }),
             Poll::Pending => Poll::Pending,
         }

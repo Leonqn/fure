@@ -31,8 +31,8 @@ where
 }
 
 pub trait RetryPolicy<T, E>: Sized {
-    type ForceRetryFuture: Future + Unpin;
-    type RetryFuture: Future<Output = Self> + Unpin;
+    type ForceRetryFuture: Future;
+    type RetryFuture: Future<Output = Self>;
 
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
