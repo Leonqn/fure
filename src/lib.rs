@@ -51,7 +51,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    #[cfg(all(feature = "tokio", test))]
+    #[cfg(all(not(feature = "async-std"), test))]
     pub fn run_test(f: impl std::future::Future + Send + 'static) {
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -65,13 +65,13 @@ mod tests {
         async_std::task::block_on(f);
     }
 
-    #[cfg(all(feature = "tokio", test))]
+    #[cfg(all(not(feature = "async-std"), test))]
     pub use tokio::task::spawn;
 
     #[cfg(all(feature = "async-std", test))]
     pub use async_std::task::spawn;
 
-    #[cfg(all(feature = "tokio", test))]
+    #[cfg(all(not(feature = "async-std"), test))]
     pub use tokio::task::yield_now;
 
     #[cfg(all(feature = "async-std", test))]

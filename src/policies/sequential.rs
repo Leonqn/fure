@@ -219,6 +219,8 @@ mod tests {
     }
 
     mod retry_failed {
+        use std::time::Duration;
+
         use super::*;
 
         #[test]
@@ -254,14 +256,14 @@ mod tests {
                 crate::tests::spawn(async move {
                     retry(create_fut, SequentialRetry::new(AttemptsPolicy::new(1))).await
                 });
-                crate::tests::yield_now().await;
+                crate::sleep::sleep(Duration::from_millis(10)).await;
 
                 {
                     let guard = call_count.lock().unwrap();
                     assert_eq!(*guard, 1);
                 }
                 *pass_allowed.lock().unwrap() = true;
-                crate::tests::yield_now().await;
+                crate::sleep::sleep(Duration::from_millis(10)).await;
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
             })
