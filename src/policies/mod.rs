@@ -2,11 +2,11 @@ pub mod concurrent;
 pub mod sequential;
 
 #[derive(Debug, Clone, Copy)]
-pub struct RetryFailed {
+pub struct AttemptPolicy {
     max_retries: usize,
 }
 
-impl RetryFailed {
+impl AttemptPolicy {
     pub fn new(max_retries: usize) -> Self {
         Self { max_retries }
     }

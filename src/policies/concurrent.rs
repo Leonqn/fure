@@ -5,7 +5,7 @@ use std::{
 
 use crate::Policy;
 
-use super::RetryFailed;
+use super::AttemptPolicy;
 
 pub trait ConcurrentPolicy<T, E>: Sized {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
@@ -15,18 +15,18 @@ pub trait DelayedConcurrentPolicy<T, E>: ConcurrentPolicy<T, E> {
     fn force_retry_after(&self) -> Duration;
 }
 
-impl<T, E> ConcurrentPolicy<T, E> for RetryFailed {
+impl<T, E> ConcurrentPolicy<T, E> for AttemptPolicy {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         self.retry(result)
     }
 }
 
-pub struct RetryDelayed<P> {
+pub struct IntervalPolicy<P> {
     policy: P,
     force_delay_after: Duration,
 }
 
-impl<P> RetryDelayed<P> {
+impl<P> IntervalPolicy<P> {
     pub fn new(policy: P, force_delay_after: Duration) -> Self {
         Self {
             policy,
@@ -34,7 +34,7 @@ impl<P> RetryDelayed<P> {
         }
     }
 }
-impl<P, T, E> ConcurrentPolicy<T, E> for RetryDelayed<P>
+impl<P, T, E> ConcurrentPolicy<T, E> for IntervalPolicy<P>
 where
     P: ConcurrentPolicy<T, E>,
 {
@@ -46,24 +46,24 @@ where
     }
 }
 
-impl<P: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for RetryDelayed<P> {
+impl<P: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for IntervalPolicy<P> {
     fn force_retry_after(&self) -> Duration {
         self.force_delay_after
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Concurrent<P> {
+pub struct ConcurrentRetry<P> {
     policy: P,
 }
 
-impl<P> Concurrent<P> {
+impl<P> ConcurrentRetry<P> {
     pub fn new(policy: P) -> Self {
         Self { policy }
     }
 }
 
-impl<P, T, E> Policy<T, E> for Concurrent<P>
+impl<P, T, E> Policy<T, E> for ConcurrentRetry<P>
 where
     P: ConcurrentPolicy<T, E>,
 {
@@ -85,17 +85,17 @@ mod delayed {
     use super::*;
 
     #[derive(Debug, Clone, Copy)]
-    pub struct DelayedConcurrent<P> {
+    pub struct DelayedConcurrentRetry<P> {
         policy: P,
     }
 
-    impl<P> DelayedConcurrent<P> {
+    impl<P> DelayedConcurrentRetry<P> {
         pub fn new(policy: P) -> Self {
             Self { policy }
         }
     }
 
-    impl<P, T, E> Policy<T, E> for DelayedConcurrent<P>
+    impl<P, T, E> Policy<T, E> for DelayedConcurrentRetry<P>
     where
         P: DelayedConcurrentPolicy<T, E>,
     {
@@ -129,7 +129,7 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use super::{super::RetryFailed, Concurrent};
+    use super::{super::AttemptPolicy, ConcurrentRetry};
     use crate::retry;
     use std::future::pending;
 
@@ -149,7 +149,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 1);
@@ -176,7 +176,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 3);
@@ -203,7 +203,7 @@ mod test {
                 }
             };
 
-            let result = retry(create_fut, Concurrent::new(RetryFailed::new(2))).await;
+            let result = retry(create_fut, ConcurrentRetry::new(RetryFailed::new(2))).await;
 
             let guard = call_count.lock().unwrap();
             assert_eq!(*guard, 2);
@@ -216,7 +216,7 @@ mod test {
 
         use std::time::{Duration, Instant};
 
-        use crate::policies::concurrent::{DelayedConcurrent, RetryDelayed};
+        use crate::policies::concurrent::{DelayedConcurrentRetry, IntervalPolicy};
 
         use super::*;
 
@@ -239,7 +239,7 @@ mod test {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(RetryDelayed::new(
+                DelayedConcurrentRetry::new(IntervalPolicy::new(
                     RetryFailed::new(2),
                     Duration::from_secs(10000),
                 )),
@@ -270,7 +270,7 @@ mod test {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(RetryDelayed::new(
+                DelayedConcurrentRetry::new(IntervalPolicy::new(
                     RetryFailed::new(2),
                     Duration::from_secs(10000),
                 )),
@@ -304,7 +304,7 @@ mod test {
             let now = Instant::now();
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(RetryDelayed::new(
+                DelayedConcurrentRetry::new(IntervalPolicy::new(
                     RetryFailed::new(2),
                     Duration::from_millis(50),
                 )),
@@ -333,7 +333,7 @@ mod test {
 
             let result = retry(
                 create_fut,
-                DelayedConcurrent::new(RetryDelayed::new(
+                DelayedConcurrentRetry::new(IntervalPolicy::new(
                     RetryFailed::new(2),
                     Duration::from_secs(10000),
                 )),

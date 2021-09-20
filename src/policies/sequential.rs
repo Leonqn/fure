@@ -6,7 +6,7 @@ use std::{
 
 use crate::Policy;
 
-use super::RetryFailed;
+use super::AttemptPolicy;
 
 pub trait SequentialPolicy<T, E>: Sized {
     type RetryFuture: Future<Output = Self>;
@@ -19,13 +19,13 @@ mod retry_backoff {
     use super::*;
     use std::{marker::PhantomData, time::Duration};
 
-    pub struct RetryBackoff<'a, P, I> {
+    pub struct BackoffPolicy<'a, P, I> {
         policy: P,
         backoff: I,
         _phantom: PhantomData<&'a ()>,
     }
 
-    impl<'a, P, I> RetryBackoff<'a, P, I> {
+    impl<'a, P, I> BackoffPolicy<'a, P, I> {
         pub fn new(policy: P, backoff: I) -> Self {
             Self {
                 policy,
@@ -35,7 +35,7 @@ mod retry_backoff {
         }
     }
 
-    impl<'a, P, I, T, E> SequentialPolicy<T, E> for RetryBackoff<'a, P, I>
+    impl<'a, P, I, T, E> SequentialPolicy<T, E> for BackoffPolicy<'a, P, I>
     where
         P: SequentialPolicy<T, E> + Send + 'a,
         P::RetryFuture: Send + 'a,
@@ -64,17 +64,17 @@ mod retry_backoff {
 }
 pub use retry_backoff::*;
 
-pub struct Sequential<P> {
+pub struct SequentialRetry<P> {
     policy: P,
 }
 
-impl<P> Sequential<P> {
+impl<P> SequentialRetry<P> {
     pub fn new(policy: P) -> Self {
         Self { policy }
     }
 }
 
-impl<P, T, E> Policy<T, E> for Sequential<P>
+impl<P, T, E> Policy<T, E> for SequentialRetry<P>
 where
     P: SequentialPolicy<T, E>,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<T, E> SequentialPolicy<T, E> for RetryFailed {
+impl<T, E> SequentialPolicy<T, E> for AttemptPolicy {
     type RetryFuture = Ready<Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
@@ -114,11 +114,11 @@ impl<P, T, E> Future for SeqMap<P, T, E>
 where
     P: SequentialPolicy<T, E>,
 {
-    type Output = Sequential<P>;
+    type Output = SequentialRetry<P>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().policy_f.poll(cx) {
-            Poll::Ready(policy) => Poll::Ready(Sequential { policy }),
+            Poll::Ready(policy) => Poll::Ready(SequentialRetry { policy }),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -129,7 +129,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::{
-        policies::{sequential::Sequential, RetryFailed},
+        policies::{sequential::SequentialRetry, AttemptPolicy},
         retry,
     };
 
@@ -137,7 +137,7 @@ mod tests {
     mod retry_backoff {
         use std::time::{Duration, Instant};
 
-        use crate::{backoff, policies::sequential::RetryBackoff};
+        use crate::{backoff, policies::sequential::BackoffPolicy};
 
         use super::*;
 
@@ -151,8 +151,8 @@ mod tests {
 
             let _result = tokio::spawn(retry(
                 create_fut,
-                Sequential::new(RetryBackoff::new(
-                    RetryFailed::new(2),
+                SequentialRetry::new(BackoffPolicy::new(
+                    AttemptPolicy::new(2),
                     backoff::exponential(
                         Duration::from_millis(50),
                         2,
@@ -198,9 +198,9 @@ mod tests {
                 }
             };
 
-            tokio::spawn(
-                async move { retry(create_fut, Sequential::new(RetryFailed::new(1))).await },
-            );
+            tokio::spawn(async move {
+                retry(create_fut, SequentialRetry::new(AttemptPolicy::new(1))).await
+            });
             tokio::task::yield_now().await;
 
             {
