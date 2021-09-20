@@ -5,7 +5,7 @@ use std::{
 
 use crate::Policy;
 
-use super::AttemptPolicy;
+use super::AttemptsPolicy;
 
 pub trait ConcurrentPolicy<T, E>: Sized {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
@@ -15,7 +15,7 @@ pub trait DelayedConcurrentPolicy<T, E>: ConcurrentPolicy<T, E> {
     fn force_retry_after(&self) -> Duration;
 }
 
-impl<T, E> ConcurrentPolicy<T, E> for AttemptPolicy {
+impl<T, E> ConcurrentPolicy<T, E> for AttemptsPolicy {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         self.retry(result)
     }
@@ -129,7 +129,7 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use super::{super::AttemptPolicy, ConcurrentRetry};
+    use super::{super::AttemptsPolicy, ConcurrentRetry};
     use crate::retry;
     use std::future::pending;
 

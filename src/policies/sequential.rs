@@ -6,7 +6,7 @@ use std::{
 
 use crate::Policy;
 
-use super::AttemptPolicy;
+use super::AttemptsPolicy;
 
 pub trait SequentialPolicy<T, E>: Sized {
     type RetryFuture: Future<Output = Self>;
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<T, E> SequentialPolicy<T, E> for AttemptPolicy {
+impl<T, E> SequentialPolicy<T, E> for AttemptsPolicy {
     type RetryFuture = Ready<Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
@@ -129,7 +129,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::{
-        policies::{sequential::SequentialRetry, AttemptPolicy},
+        policies::{sequential::SequentialRetry, AttemptsPolicy},
         retry,
     };
 
@@ -152,7 +152,7 @@ mod tests {
             let _result = tokio::spawn(retry(
                 create_fut,
                 SequentialRetry::new(BackoffPolicy::new(
-                    AttemptPolicy::new(2),
+                    AttemptsPolicy::new(2),
                     backoff::exponential(
                         Duration::from_millis(50),
                         2,
@@ -199,7 +199,7 @@ mod tests {
             };
 
             tokio::spawn(async move {
-                retry(create_fut, SequentialRetry::new(AttemptPolicy::new(1))).await
+                retry(create_fut, SequentialRetry::new(AttemptsPolicy::new(1))).await
             });
             tokio::task::yield_now().await;
 
