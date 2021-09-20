@@ -8,9 +8,9 @@ pub mod backoff;
 pub mod future;
 pub mod policies;
 
-pub fn retry<R, T, E, F, CF>(create_f: CF, policy: R) -> Retry<R, T, E, F, CF>
+pub fn retry<P, T, E, F, CF>(create_f: CF, policy: P) -> Retry<P, T, E, F, CF>
 where
-    R: Policy<T, E>,
+    P: Policy<T, E>,
     F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {

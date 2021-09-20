@@ -21,51 +21,51 @@ impl<T, E> ConcurrentPolicy<T, E> for RetryFailed {
     }
 }
 
-pub struct RetryFailedDelayed<R> {
-    retry: R,
+pub struct RetryFailedDelayed<P> {
+    policy: P,
     force_delay_after: Duration,
 }
 
-impl<R> RetryFailedDelayed<R> {
-    pub fn new(retry: R, force_delay_after: Duration) -> Self {
+impl<P> RetryFailedDelayed<P> {
+    pub fn new(policy: P, force_delay_after: Duration) -> Self {
         Self {
-            retry,
+            policy,
             force_delay_after,
         }
     }
 }
-impl<R, T, E> ConcurrentPolicy<T, E> for RetryFailedDelayed<R>
+impl<P, T, E> ConcurrentPolicy<T, E> for RetryFailedDelayed<P>
 where
-    R: ConcurrentPolicy<T, E>,
+    P: ConcurrentPolicy<T, E>,
 {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         let force_delay_after = self.force_delay_after;
-        self.retry
+        self.policy
             .retry(result)
             .map(|x| Self::new(x, force_delay_after))
     }
 }
 
-impl<R: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for RetryFailedDelayed<R> {
+impl<P: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for RetryFailedDelayed<P> {
     fn force_retry_after(&self) -> Duration {
         self.force_delay_after
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Concurrent<R> {
-    retry: R,
+pub struct Concurrent<P> {
+    policy: P,
 }
 
-impl<R> Concurrent<R> {
-    pub fn new(retry: R) -> Self {
-        Self { retry }
+impl<P> Concurrent<P> {
+    pub fn new(policy: P) -> Self {
+        Self { policy }
     }
 }
 
-impl<R, T, E> Policy<T, E> for Concurrent<R>
+impl<P, T, E> Policy<T, E> for Concurrent<P>
 where
-    R: ConcurrentPolicy<T, E>,
+    P: ConcurrentPolicy<T, E>,
 {
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
@@ -76,7 +76,7 @@ where
 
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
         Some(ready(Self {
-            retry: self.retry.retry(result)?,
+            policy: self.policy.retry(result)?,
         }))
     }
 }
@@ -85,19 +85,19 @@ mod delayed {
     use super::*;
 
     #[derive(Debug, Clone, Copy)]
-    pub struct DelayedConcurrent<R> {
-        retry: R,
+    pub struct DelayedConcurrent<P> {
+        policy: P,
     }
 
-    impl<R> DelayedConcurrent<R> {
-        pub fn new(retry: R) -> Self {
-            Self { retry }
+    impl<P> DelayedConcurrent<P> {
+        pub fn new(policy: P) -> Self {
+            Self { policy }
         }
     }
 
-    impl<R, T, E> Policy<T, E> for DelayedConcurrent<R>
+    impl<P, T, E> Policy<T, E> for DelayedConcurrent<P>
     where
-        R: DelayedConcurrentPolicy<T, E>,
+        P: DelayedConcurrentPolicy<T, E>,
     {
         #[cfg(feature = "tokio")]
         type ForceRetryFuture = tokio::time::Sleep;
@@ -107,18 +107,18 @@ mod delayed {
 
         #[cfg(feature = "tokio")]
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
-            tokio::time::sleep(self.retry.force_retry_after())
+            tokio::time::sleep(self.policy.force_retry_after())
         }
         #[cfg(feature = "async-std")]
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
-            Box::pin(async_std::task::sleep(self.retry.force_retry_after()))
+            Box::pin(async_std::task::sleep(self.policy.force_retry_after()))
         }
 
         type RetryFuture = Ready<Self>;
 
         fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
             Some(ready(Self {
-                retry: self.retry.retry(result)?,
+                policy: self.policy.retry(result)?,
             }))
         }
     }

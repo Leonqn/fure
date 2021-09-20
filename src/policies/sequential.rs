@@ -19,36 +19,36 @@ mod retry_backoff {
     use super::*;
     use std::{marker::PhantomData, time::Duration};
 
-    pub struct RetryBackoff<'a, R, I> {
-        retry: R,
+    pub struct RetryBackoff<'a, P, I> {
+        policy: P,
         backoff: I,
         _phantom: PhantomData<&'a ()>,
     }
 
-    impl<'a, R, I> RetryBackoff<'a, R, I> {
-        pub fn new(retry: R, backoff: I) -> Self {
+    impl<'a, P, I> RetryBackoff<'a, P, I> {
+        pub fn new(policy: P, backoff: I) -> Self {
             Self {
-                retry,
+                policy,
                 backoff,
                 _phantom: Default::default(),
             }
         }
     }
 
-    impl<'a, R, I, T, E> SequentialPolicy<T, E> for RetryBackoff<'a, R, I>
+    impl<'a, P, I, T, E> SequentialPolicy<T, E> for RetryBackoff<'a, P, I>
     where
-        R: SequentialPolicy<T, E> + Send + 'a,
-        R::RetryFuture: Send + 'a,
+        P: SequentialPolicy<T, E> + Send + 'a,
+        P::RetryFuture: Send + 'a,
         I: Iterator<Item = Duration> + Send + 'a,
     {
         type RetryFuture = Pin<Box<dyn Future<Output = Self> + Send + 'a>>;
 
         fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
-            let retry = self.retry.retry(result)?;
+            let policy = self.policy.retry(result)?;
             let mut backoff = self.backoff;
             let delay = backoff.next();
-            let retry = Box::pin(async move {
-                let new_retry = retry.await;
+            let policy = Box::pin(async move {
+                let new_policy = policy.await;
                 if let Some(delay) = delay {
                     #[cfg(feature = "tokio")]
                     tokio::time::sleep(delay).await;
@@ -56,30 +56,30 @@ mod retry_backoff {
                     async_std::task::sleep(delay).await;
                 }
 
-                Self::new(new_retry, backoff)
+                Self::new(new_policy, backoff)
             });
-            Some(retry)
+            Some(policy)
         }
     }
 }
 pub use retry_backoff::*;
 
-pub struct Sequential<R> {
-    retry: R,
+pub struct Sequential<P> {
+    policy: P,
 }
 
-impl<R> Sequential<R> {
-    pub fn new(retry: R) -> Self {
-        Self { retry }
+impl<P> Sequential<P> {
+    pub fn new(policy: P) -> Self {
+        Self { policy }
     }
 }
 
-impl<R, T, E> Policy<T, E> for Sequential<R>
+impl<P, T, E> Policy<T, E> for Sequential<P>
 where
-    R: SequentialPolicy<T, E>,
+    P: SequentialPolicy<T, E>,
 {
     type ForceRetryFuture = Pending<()>;
-    type RetryFuture = SeqMap<R, T, E>;
+    type RetryFuture = SeqMap<P, T, E>;
 
     fn force_retry_after(&self) -> Self::ForceRetryFuture {
         pending()
@@ -87,8 +87,8 @@ where
 
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
         let result = result.expect("Result must be some");
-        let retry_f = self.retry.retry(result)?;
-        Some(SeqMap { retry_f })
+        let policy_f = self.policy.retry(result)?;
+        Some(SeqMap { policy_f })
     }
 }
 
@@ -101,24 +101,24 @@ impl<T, E> SequentialPolicy<T, E> for RetryFailed {
 }
 
 pin_project_lite::pin_project! {
-    pub struct SeqMap<R, T, E>
+    pub struct SeqMap<P, T, E>
     where
-        R: SequentialPolicy<T, E>,
+        P: SequentialPolicy<T, E>,
     {
         #[pin]
-        retry_f: R::RetryFuture,
+        policy_f: P::RetryFuture,
     }
 }
 
-impl<R, T, E> Future for SeqMap<R, T, E>
+impl<P, T, E> Future for SeqMap<P, T, E>
 where
-    R: SequentialPolicy<T, E>,
+    P: SequentialPolicy<T, E>,
 {
-    type Output = Sequential<R>;
+    type Output = Sequential<P>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project().retry_f.poll(cx) {
-            Poll::Ready(retry) => Poll::Ready(Sequential { retry }),
+        match self.project().policy_f.poll(cx) {
+            Poll::Ready(policy) => Poll::Ready(Sequential { policy }),
             Poll::Pending => Poll::Pending,
         }
     }

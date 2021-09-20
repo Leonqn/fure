@@ -8,10 +8,10 @@ use pin_project_lite::pin_project;
 
 use crate::{CreateFuture, Policy};
 
-macro_rules! try_retry {
-    ($retry:expr, $result:expr) => {
-        match $retry.retry(Some($result.as_ref())) {
-            Some(retry_fut) => RetryState::WaitingRetry { retry_fut },
+macro_rules! try_policy {
+    ($policy:expr, $result:expr) => {
+        match $policy.retry(Some($result.as_ref())) {
+            Some(policy_fut) => RetryState::WaitingRetry { policy_fut },
             None => return Poll::Ready($result),
         }
     };
@@ -28,34 +28,36 @@ macro_rules! ready {
 
 pin_project! {
     #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct Retry<R, T, E, F, CF>
+    pub struct Retry<P, T, E, F, CF>
     where
-        R: Policy<T, E>,
+        P: Policy<T, E>,
     {
         create_f: CF,
         #[pin]
         running_futs: Futs<F>,
         #[pin]
-        retry_state: RetryState<R, T, E>
+        retry_state: RetryState<P, T, E>
     }
 }
 
-impl<R, T, E, F, CF> Retry<R, T, E, F, CF>
+impl<P, T, E, F, CF> Retry<P, T, E, F, CF>
 where
-    R: Policy<T, E>,
+    P: Policy<T, E>,
 {
-    pub(crate) fn new(retry: R, create_f: CF) -> Self {
+    pub(crate) fn new(policy: P, create_f: CF) -> Self {
         Self {
             running_futs: Futs::empty(),
             create_f,
-            retry_state: RetryState::CreateFut { retry: Some(retry) },
+            retry_state: RetryState::CreateFut {
+                policy: Some(policy),
+            },
         }
     }
 }
 
-impl<R, T, E, F, CF> Future for Retry<R, T, E, F, CF>
+impl<P, T, E, F, CF> Future for Retry<P, T, E, F, CF>
 where
-    R: Policy<T, E>,
+    P: Policy<T, E>,
     F: Future<Output = Result<T, E>>,
     CF: CreateFuture<F>,
 {
@@ -65,36 +67,40 @@ where
         loop {
             let this = self.as_mut().project();
             let new_state = match this.retry_state.project() {
-                RetryStateProj::CreateFut { retry } => {
+                RetryStateProj::CreateFut { policy } => {
                     this.running_futs.push(this.create_f.create());
                     RetryState::PollResults {
-                        retry: retry.take(),
+                        policy: policy.take(),
                     }
                 }
-                RetryStateProj::WaitingDelay { delay, retry } => match this.running_futs.poll(cx) {
-                    Poll::Ready(result) => {
-                        let retry = retry.take().expect("Waiting retry must be some");
-                        try_retry!(retry, result)
-                    }
-                    Poll::Pending => {
-                        ready!(delay.poll(cx));
-                        let retry = retry.take().expect("Waiting retry must be some");
-                        match retry.retry(None) {
-                            Some(retry_fut) => RetryState::WaitingRetry { retry_fut },
-                            None => RetryState::PollResults { retry: None },
+                RetryStateProj::WaitingDelay { delay, policy } => {
+                    match this.running_futs.poll(cx) {
+                        Poll::Ready(result) => {
+                            let policy = policy.take().expect("Waiting policy must be some");
+                            try_policy!(policy, result)
+                        }
+                        Poll::Pending => {
+                            ready!(delay.poll(cx));
+                            let policy = policy.take().expect("Waiting policy must be some");
+                            match policy.retry(None) {
+                                Some(policy_fut) => RetryState::WaitingRetry { policy_fut },
+                                None => RetryState::PollResults { policy: None },
+                            }
                         }
                     }
-                },
-                RetryStateProj::WaitingRetry { retry_fut } => {
-                    let retry = ready!(retry_fut.poll(cx));
-                    RetryState::CreateFut { retry: Some(retry) }
                 }
-                RetryStateProj::PollResults { retry } => match retry.take() {
-                    Some(retry) => match this.running_futs.poll(cx) {
-                        Poll::Ready(result) => try_retry!(retry, result),
+                RetryStateProj::WaitingRetry { policy_fut } => {
+                    let policy = ready!(policy_fut.poll(cx));
+                    RetryState::CreateFut {
+                        policy: Some(policy),
+                    }
+                }
+                RetryStateProj::PollResults { policy } => match policy.take() {
+                    Some(policy) => match this.running_futs.poll(cx) {
+                        Poll::Ready(result) => try_policy!(policy, result),
                         Poll::Pending => RetryState::WaitingDelay {
-                            delay: retry.force_retry_after(),
-                            retry: Some(retry),
+                            delay: policy.force_retry_after(),
+                            policy: Some(policy),
                         },
                     },
                     None => return this.running_futs.poll(cx),
@@ -107,14 +113,14 @@ where
 
 pin_project! {
     #[project = RetryStateProj]
-    enum RetryState<R, T, E>
+    enum RetryState<P, T, E>
     where
-        R: Policy<T, E>,
+        P: Policy<T, E>,
         {
-            CreateFut { retry: Option<R> },
-            WaitingDelay { #[pin] delay: R::ForceRetryFuture, retry: Option<R> },
-            WaitingRetry { #[pin] retry_fut: R::RetryFuture },
-            PollResults { retry: Option<R> },
+            CreateFut { policy: Option<P> },
+            WaitingDelay { #[pin] delay: P::ForceRetryFuture, policy: Option<P> },
+            WaitingRetry { #[pin] policy_fut: P::RetryFuture },
+            PollResults { policy: Option<P> },
     }
 }
 
