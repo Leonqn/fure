@@ -3,7 +3,6 @@ pub use tokio::time::sleep;
 
 #[cfg(feature = "async-std")]
 pub fn sleep(duration: std::time::Duration) -> Sleep {
-    #[cfg(feature = "async-std")]
     Sleep {
         timer: Box::pin(async_std::task::sleep(duration)),
     }
