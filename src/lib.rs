@@ -1,43 +1,88 @@
+//! A crate for retrying futures using different strategies.
+//!
+
 #[cfg(all(feature = "tokio", feature = "async-std"))]
 compile_error!("`tokio` and `async-std` features must not be enabled together");
 
-use future::Retry;
 use std::future::Future;
 
+/// Backoff utilities for [`crate::policies::sequential::backoff`] policy.
 pub mod backoff;
-pub mod future;
+
+/// Some builtin implementations of [`Policy`].
 pub mod policies;
+
+/// Sleep functions for `tokio` and `async-std`.
 #[cfg(any(feature = "tokio", feature = "async-std"))]
 pub mod sleep;
 
-pub fn retry<P, T, E, F, CF>(create_f: CF, policy: P) -> Retry<P, T, E, F, CF>
+pub use future::Retry;
+
+mod future;
+
+/// Run futures created by [`CreateFuture`] accorrding to [`Policy`].
+/// ## Simple concurrent policy
+/// Run at most 4 concurrent futures and wait a successful one.
+/// ```
+/// # async fn run() -> Result<(), reqwest::Error> {
+/// use fure::policies::{concurrent::parallel, Attempts};
+///
+/// let get_body = || async {
+///     reqwest::get("https://www.rust-lang.org")
+///         .await?
+///         .text()
+///         .await
+/// };
+/// let body = fure::retry(get_body, parallel(Attempts::new(3))).await?;
+/// println!("body = {}", body);
+/// # Ok(())
+/// # }
+/// ```
+pub fn retry<P, T, E, CF>(create_f: CF, policy: P) -> Retry<P, T, E, CF>
 where
     P: Policy<T, E>,
-    F: Future<Output = Result<T, E>>,
-    CF: CreateFuture<F>,
+    CF: CreateFuture<T, E>,
 {
     Retry::new(policy, create_f)
 }
 
-pub trait CreateFuture<F> {
-    fn create(&mut self) -> F;
+/// A trait is used to create futures which then will be run.
+pub trait CreateFuture<T, E> {
+    type Output: Future<Output = Result<T, E>>;
+
+    fn create(&mut self) -> Self::Output;
 }
 
-impl<F, FN> CreateFuture<F> for FN
+impl<T, E, F, FN> CreateFuture<T, E> for FN
 where
     FN: FnMut() -> F,
+    F: Future<Output = Result<T, E>>,
 {
-    fn create(&mut self) -> F {
+    type Output = F;
+
+    fn create(&mut self) -> Self::Output {
         self()
     }
 }
 
+/// A generic policy used to determine how a future should be retried.
 pub trait Policy<T, E>: Sized {
+    /// Future type returned by [`Policy::force_retry_after`].
     type ForceRetryFuture: Future;
+
+    /// Future type returned by [`Policy::retry`].
     type RetryFuture: Future<Output = Self>;
 
+    /// When completes a [`Policy::retry`] will be called with [`None`] argument.
+    ///
+    /// All previous futures won't be cancelled.
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
+    /// Check the policy if a new futures should be created using [`CreateFuture`].
+    ///
+    /// This method is passed a reference to the future's result or [`None`] if it was called after [`Policy::force_retry_after`].
+    ///
+    /// If a new future should be created and polled return [`Some`] with a new policy, otherwise return [`None`].
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture>;
 }
 

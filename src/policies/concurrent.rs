@@ -1,69 +1,67 @@
-use std::{
-    future::{ready, Ready},
-    time::Duration,
-};
+use std::future::{ready, Ready};
 
 use crate::Policy;
 
-use super::AttemptsPolicy;
+use super::Attempts;
 
+/// Create a [`crate::Policy`] to run futures concurrently until [`ConcurrentPolicy::retry`] returns [`None`].
+/// ## Example
+/// Send at most 4 concurrent requests and wait for one for which result [`ConcurrentPolicy::retry`] returns [`Some`].
+///
+/// If one of the futures completes immediately (without returning [`std::task::Poll::Pending`]) no additional futures will be run
+/// ```
+/// # async fn run() -> Result<(), reqwest::Error> {
+/// use fure::policies::{concurrent::parallel, Attempts};
+///
+/// let get_body = || async {
+///     reqwest::get("https://www.rust-lang.org")
+///         .await?
+///         .text()
+///         .await
+/// };
+/// let body = fure::retry(get_body, parallel(Attempts::new(3))).await?;
+/// println!("body = {}", body);
+/// # Ok(())
+/// # }
+/// ```
+pub fn parallel<P>(policy: P) -> ParallelRetryPolicy<P> {
+    ParallelRetryPolicy { policy }
+}
+
+/// A policy is used to determine if a future should be retried.
+///
+/// It is used with [`interval`] and [`parallel`] functions.
 pub trait ConcurrentPolicy<T, E>: Sized {
+    /// Check the policy if a new futures should be created using [`crate::CreateFuture`].
+    ///
+    /// This method is passed a reference to the future's result or [`None`] if it is a concurrent retry.
+    ///
+    /// If a new future should be created and polled return [`Some`] with a new policy, otherwise return [`None`].
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
 }
 
-pub trait DelayedConcurrentPolicy<T, E>: ConcurrentPolicy<T, E> {
-    fn force_retry_after(&self) -> Duration;
-}
-
-impl<T, E> ConcurrentPolicy<T, E> for AttemptsPolicy {
+impl<T, E> ConcurrentPolicy<T, E> for Attempts {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
         self.retry(result)
     }
 }
 
-pub struct IntervalPolicy<P> {
-    policy: P,
-    force_delay_after: Duration,
-}
-
-impl<P> IntervalPolicy<P> {
-    pub fn new(policy: P, force_delay_after: Duration) -> Self {
-        Self {
-            policy,
-            force_delay_after,
-        }
-    }
-}
-impl<P, T, E> ConcurrentPolicy<T, E> for IntervalPolicy<P>
+impl<T, E, FN> ConcurrentPolicy<T, E> for FN
 where
-    P: ConcurrentPolicy<T, E>,
+    FN: FnOnce(Option<Result<&T, &E>>) -> Option<Self>,
 {
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
-        let force_delay_after = self.force_delay_after;
-        self.policy
-            .retry(result)
-            .map(|x| Self::new(x, force_delay_after))
+        self(result)
     }
 }
 
-impl<P: ConcurrentPolicy<T, E>, T, E> DelayedConcurrentPolicy<T, E> for IntervalPolicy<P> {
-    fn force_retry_after(&self) -> Duration {
-        self.force_delay_after
-    }
-}
-
+/// A policy is created by [`parallel`] function
 #[derive(Debug, Clone, Copy)]
-pub struct ConcurrentRetry<P> {
+pub struct ParallelRetryPolicy<P> {
     policy: P,
 }
 
-impl<P> ConcurrentRetry<P> {
-    pub fn new(policy: P) -> Self {
-        Self { policy }
-    }
-}
-
-impl<P, T, E> Policy<T, E> for ConcurrentRetry<P>
+impl<P, T, E> Policy<T, E> for ParallelRetryPolicy<P>
 where
     P: ConcurrentPolicy<T, E>,
 {
@@ -83,32 +81,61 @@ where
 #[cfg(any(feature = "tokio", feature = "async-std"))]
 mod delayed {
     use super::*;
+    use std::time::Duration;
 
-    #[derive(Debug, Clone, Copy)]
-    pub struct DelayedConcurrentRetry<P> {
-        policy: P,
-    }
-
-    impl<P> DelayedConcurrentRetry<P> {
-        pub fn new(policy: P) -> Self {
-            Self { policy }
+    /// Create a [`crate::Policy`] to run additional future every time when `force_retry_after` delay elapsed and/or [`ConcurrentPolicy::retry`] returns [`None`].
+    ///
+    /// After each completed future previous delay is dropped and a new one will be started
+    /// ## Example
+    /// Send at most 4 concurrent requests and wait for one for which result [`ConcurrentPolicy::retry`] returns [`Some`].
+    ///
+    /// Every next future will be run only after 1 second.
+    ///
+    /// If request time takes less than 1 second no additional futures will be run.
+    /// ```
+    /// # async fn run() -> Result<(), reqwest::Error> {
+    /// use fure::policies::{concurrent::interval, Attempts};
+    /// use std::time::Duration;
+    ///
+    /// let get_body = || async {
+    ///     reqwest::get("https://www.rust-lang.org")
+    ///         .await?
+    ///         .text()
+    ///         .await
+    /// };
+    /// let body = fure::retry(get_body, interval(Attempts::new(3), Duration::from_secs(1))).await?;
+    /// println!("body = {}", body);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn interval<P>(policy: P, force_retry_after: Duration) -> IntervalRetryPolicy<P> {
+        IntervalRetryPolicy {
+            policy,
+            force_retry_after,
         }
     }
 
-    impl<P, T, E> Policy<T, E> for DelayedConcurrentRetry<P>
+    /// A policy is created by [`interval`] function
+    pub struct IntervalRetryPolicy<P> {
+        policy: P,
+        force_retry_after: Duration,
+    }
+
+    impl<P, T, E> Policy<T, E> for IntervalRetryPolicy<P>
     where
-        P: DelayedConcurrentPolicy<T, E>,
+        P: ConcurrentPolicy<T, E>,
     {
         type ForceRetryFuture = crate::sleep::Sleep;
         type RetryFuture = Ready<Self>;
 
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
-            crate::sleep::sleep(self.policy.force_retry_after())
+            crate::sleep::sleep(self.force_retry_after)
         }
 
         fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
             Some(ready(Self {
                 policy: self.policy.retry(result)?,
+                force_retry_after: self.force_retry_after,
             }))
         }
     }
@@ -120,12 +147,14 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use super::{super::AttemptsPolicy, ConcurrentRetry};
+    use super::super::Attempts;
     use crate::retry;
     use crate::tests::run_test;
     use std::future::pending;
 
     mod concurrent {
+
+        use crate::policies::concurrent::parallel;
 
         use super::*;
 
@@ -143,7 +172,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
+                let result = retry(create_fut, parallel(Attempts::new(2))).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 1);
@@ -172,7 +201,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
+                let result = retry(create_fut, parallel(Attempts::new(2))).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -201,7 +230,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, ConcurrentRetry::new(AttemptsPolicy::new(2))).await;
+                let result = retry(create_fut, parallel(Attempts::new(2))).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -215,7 +244,7 @@ mod test {
 
         use std::time::{Duration, Instant};
 
-        use crate::policies::concurrent::{DelayedConcurrentRetry, IntervalPolicy};
+        use crate::policies::concurrent::interval;
 
         use super::*;
 
@@ -239,10 +268,7 @@ mod test {
 
                 let result = retry(
                     create_fut,
-                    DelayedConcurrentRetry::new(IntervalPolicy::new(
-                        AttemptsPolicy::new(2),
-                        Duration::from_secs(10000),
-                    )),
+                    interval(Attempts::new(2), Duration::from_secs(10000)),
                 )
                 .await;
 
@@ -272,10 +298,7 @@ mod test {
 
                 let result = retry(
                     create_fut,
-                    DelayedConcurrentRetry::new(IntervalPolicy::new(
-                        AttemptsPolicy::new(2),
-                        Duration::from_secs(10000),
-                    )),
+                    interval(Attempts::new(2), Duration::from_secs(10000)),
                 )
                 .await;
 
@@ -308,10 +331,7 @@ mod test {
                 let now = Instant::now();
                 let result = retry(
                     create_fut,
-                    DelayedConcurrentRetry::new(IntervalPolicy::new(
-                        AttemptsPolicy::new(2),
-                        Duration::from_millis(50),
-                    )),
+                    interval(Attempts::new(2), Duration::from_millis(50)),
                 )
                 .await;
 
@@ -339,10 +359,7 @@ mod test {
 
                 let result = retry(
                     create_fut,
-                    DelayedConcurrentRetry::new(IntervalPolicy::new(
-                        AttemptsPolicy::new(2),
-                        Duration::from_secs(10000),
-                    )),
+                    interval(Attempts::new(2), Duration::from_secs(10000)),
                 )
                 .await;
 

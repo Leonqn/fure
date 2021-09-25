@@ -1,9 +1,30 @@
 use std::time::Duration;
 
+/// Create an iterator that yields fixed duration.
 pub fn fixed(duration: Duration) -> impl Iterator<Item = Duration> {
     std::iter::repeat(duration)
 }
 
+/// Create an iterator which yields an exponential sequence of durations.
+/// ## Example
+/// ```
+/// use std::time::Duration;
+/// use fure::backoff;
+/// let durations = backoff::exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(7)))
+///     .take(5)
+///     .collect::<Vec<_>>();
+///
+/// assert_eq!(
+///     vec![
+///         Duration::from_secs(1),
+///         Duration::from_secs(2),
+///         Duration::from_secs(4),
+///         Duration::from_secs(7),
+///         Duration::from_secs(7),
+///     ],
+///     durations
+/// );
+/// ```
 pub fn exponential(
     mut initial: Duration,
     factor: u32,
@@ -20,6 +41,7 @@ pub fn exponential(
     })
 }
 
+/// Adds some randomness to given duration.
 #[cfg(feature = "rand")]
 pub fn jitter(duration: Duration) -> Duration {
     let jitter = rand::random::<f64>();

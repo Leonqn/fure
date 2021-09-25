@@ -27,22 +27,25 @@ macro_rules! ready {
 }
 
 pin_project! {
+    /// A future is created by [`crate::retry`]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct Retry<P, T, E, F, CF>
+    pub struct Retry<P, T, E, CF>
     where
         P: Policy<T, E>,
+        CF: CreateFuture<T, E>
     {
         create_f: CF,
         #[pin]
-        running_futs: Futs<F>,
+        running_futs: Futs<CF::Output>,
         #[pin]
         retry_state: RetryState<P, T, E>
     }
 }
 
-impl<P, T, E, F, CF> Retry<P, T, E, F, CF>
+impl<P, T, E, CF> Retry<P, T, E, CF>
 where
     P: Policy<T, E>,
+    CF: CreateFuture<T, E>,
 {
     pub(crate) fn new(policy: P, create_f: CF) -> Self {
         Self {
@@ -55,13 +58,12 @@ where
     }
 }
 
-impl<P, T, E, F, CF> Future for Retry<P, T, E, F, CF>
+impl<P, T, E, CF> Future for Retry<P, T, E, CF>
 where
     P: Policy<T, E>,
-    F: Future<Output = Result<T, E>>,
-    CF: CreateFuture<F>,
+    CF: CreateFuture<T, E>,
 {
-    type Output = F::Output;
+    type Output = <CF::Output as Future>::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
