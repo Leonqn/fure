@@ -8,12 +8,12 @@ use super::Attempts;
 use crate::Policy;
 use pin_project_lite::pin_project;
 
-/// Create a [`crate::Policy`] to run futures sequentially until [`SequentialPolicy::retry`] returns [`None`].
+/// Creates a policy to run futures sequentially until [`SequentialRetry::retry`] returns [`None`].
 /// ## Example
-/// Send at most 4 requests returns the first rusult for which [`SequentialPolicy::retry`] returns [`None`] otherwise returns last [`Err`] result.
+/// Sends at most 4 requests and returns the first rusult for which [`SequentialRetry::retry`] returns [`None`] otherwise returns last [`Err`] result.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{sequential::sequential, Attempts};
+/// use fure::policies::{sequential, Attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -26,17 +26,16 @@ use pin_project_lite::pin_project;
 /// # Ok(())
 /// # }
 /// ```
-pub fn sequential<P>(policy: P) -> SequentialRetry<P> {
-    SequentialRetry { policy }
+pub fn sequential<P>(policy: P) -> SequentialRetryPolicy<P> {
+    SequentialRetryPolicy { policy }
 }
 
-/// A policy is used to determine if a future should be retried.
-///
-/// It is used with [`sequential`] and [`backoff`] functions.
-pub trait SequentialPolicy<T, E>: Sized {
+/// A helper policy trait which is used for [`sequential`] and [`backoff`] functions.
+pub trait SequentialRetry<T, E>: Sized {
+    // Future type returned by [`SequentialRetry::retry`]
     type RetryFuture: Future<Output = Self>;
 
-    /// Check the policy if a new futures should be created using [`crate::CreateFuture`].
+    /// Checks the policy if a new futures should be created.
     ///
     /// This method is passed a reference to the future's result.
     ///
@@ -45,19 +44,7 @@ pub trait SequentialPolicy<T, E>: Sized {
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture>;
 }
 
-impl<T, E, FN, F> SequentialPolicy<T, E> for FN
-where
-    FN: FnOnce(Result<&T, &E>) -> Option<F>,
-    F: Future<Output = Self>,
-{
-    type RetryFuture = F;
-
-    fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
-        self(result)
-    }
-}
-
-impl<T, E> SequentialPolicy<T, E> for Attempts {
+impl<T, E> SequentialRetry<T, E> for Attempts<T, E> {
     type RetryFuture = Ready<Self>;
 
     fn retry(self, result: Result<&T, &E>) -> Option<Self::RetryFuture> {
@@ -66,13 +53,13 @@ impl<T, E> SequentialPolicy<T, E> for Attempts {
 }
 
 /// A policy is created by [`sequential`] function
-pub struct SequentialRetry<P> {
+pub struct SequentialRetryPolicy<P> {
     policy: P,
 }
 
-impl<P, T, E> Policy<T, E> for SequentialRetry<P>
+impl<P, T, E> Policy<T, E> for SequentialRetryPolicy<P>
 where
-    P: SequentialPolicy<T, E>,
+    P: SequentialRetry<T, E>,
 {
     type ForceRetryFuture = Pending<()>;
     type RetryFuture = SeqMap<P, T, E>;
@@ -93,14 +80,14 @@ mod retry_backoff {
     use super::*;
     use std::time::Duration;
 
-    /// Create a [`crate::Policy`] to run futures sequentially with specified backoff until [`SequentialPolicy::retry`] returns [`None`].
+    /// Creates a [`crate::Policy`] to run futures sequentially with specified backoff until [`SequentialRetry::retry`] returns [`None`].
     /// ## Example
-    /// Send at most 4 requests returns the first rusult for which [`SequentialPolicy::retry`] returns [`None`] otherwise returns last [`Err`] result.
+    /// Sends at most 4 requests and returns the first rusult for which [`SequentialRetry::retry`] returns [`None`] otherwise returns last [`Err`] result.
     ///
-    /// Each next request will be send only after specified backoff.
+    /// Each next request will be sent only after specified backoff.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::{backoff::fixed, policies::{sequential::backoff, Attempts}};
+    /// use fure::{backoff::fixed, policies::{backoff, Attempts}};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -127,7 +114,7 @@ mod retry_backoff {
 
     impl<'a, P, I, T, E> Policy<T, E> for BackoffRetry<P, I>
     where
-        P: SequentialPolicy<T, E>,
+        P: SequentialRetry<T, E>,
         I: Iterator<Item = Duration>,
     {
         type ForceRetryFuture = Pending<()>;
@@ -149,6 +136,7 @@ mod retry_backoff {
     }
 
     pin_project! {
+        /// A future for [`backoff`] policy
         pub struct SeqDelay<F, I>
         where F: Future {
             backoff: Option<I>,
@@ -159,7 +147,7 @@ mod retry_backoff {
 
     pin_project! {
         #[project = SeqDelayStateProj]
-        pub enum SeqDelayState<F>
+        enum SeqDelayState<F>
             where F: Future
         {
             RetryFut {#[pin] f: F },
@@ -214,9 +202,10 @@ mod retry_backoff {
 pub use retry_backoff::*;
 
 pin_project! {
+    /// A future for [`sequential`] policy
     pub struct SeqMap<P, T, E>
     where
-        P: SequentialPolicy<T, E>,
+        P: SequentialRetry<T, E>,
     {
         #[pin]
         policy_f: P::RetryFuture,
@@ -225,13 +214,13 @@ pin_project! {
 
 impl<P, T, E> Future for SeqMap<P, T, E>
 where
-    P: SequentialPolicy<T, E>,
+    P: SequentialRetry<T, E>,
 {
-    type Output = SequentialRetry<P>;
+    type Output = SequentialRetryPolicy<P>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project().policy_f.poll(cx) {
-            Poll::Ready(policy) => Poll::Ready(SequentialRetry { policy }),
+            Poll::Ready(policy) => Poll::Ready(SequentialRetryPolicy { policy }),
             Poll::Pending => Poll::Pending,
         }
     }

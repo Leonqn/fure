@@ -1,12 +1,69 @@
-//! A crate for retrying futures using different strategies.
+//! A crate for retrying futures using different policies.
+//! The [`Policy`] will help you define different retry policies
 //!
+//! The crate contains some builtin policies in [`policies`] module.
+//! # Examples.
+//! ## Interval retry.
+//! Starts with sending a request, setting up a 1 second timer, and waits for either of them.
+//!
+//! If the timer completes first (it means that the request doesn't complete in 1 second) one more request is fired.
+//!
+//! If the request completes first and it has on [`Ok`] response it is returned, if request has [`Err`] response timer is reset and a new request is started.
+//!
+//! At most 4 requests will be fired.
+//!
+//! When one of runninng requests completes with an [`Ok`] result it will be returned.
+//! ```
+//! # async fn run() -> Result<(), reqwest::Error> {
+//! use fure::policies::{interval, Attempts};
+//! use std::time::Duration;
+//!
+//! let get_body = || async {
+//!     reqwest::get("https://www.rust-lang.org")
+//!         .await?
+//!         .text()
+//!         .await
+//! };
+//! let policy = interval(
+//!     Attempts::with_retry_if(3, |r| !matches!(r, Some(Ok(_)))),
+//!     Duration::from_secs(1),
+//! );
+//! let body = fure::retry(get_body, policy).await?;
+//! println!("body = {}", body);
+//! # Ok(())
+//! # }
+//! ```
+//! ## Sequential retry with backoff.
+//! Retries request with an exponential backoff and a jitter if it fails.
+//! ```
+//! # async fn run() -> Result<(), reqwest::Error> {
+//! use fure::policies::{backoff, Attempts};
+//! use std::time::Duration;
+//!
+//! let get_body = || async {
+//!     reqwest::get("https://www.rust-lang.org")
+//!         .await?
+//!         .text()
+//!         .await
+//! };
+//! let exp_backoff = fure::backoff::exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
+//!     .map(fure::backoff::jitter);
+//! let policy = backoff(
+//!     Attempts::with_retry_if(3, |r| !matches!(r, Some(Ok(_)))),
+//!     exp_backoff,
+//! );
+//! let body = fure::retry(get_body, policy).await?;
+//! println!("body = {}", body);
+//! # Ok(())
+//! # }
+//! ```
 
 #[cfg(all(feature = "tokio", feature = "async-std"))]
 compile_error!("`tokio` and `async-std` features must not be enabled together");
 
 use std::future::Future;
 
-/// Backoff utilities for [`crate::policies::sequential::backoff`] policy.
+/// Backoff utilities for [`crate::policies::backoff`] policy.
 pub mod backoff;
 
 /// Some builtin implementations of [`Policy`].
@@ -20,12 +77,12 @@ pub use future::Retry;
 
 mod future;
 
-/// Run futures created by [`CreateFuture`] accorrding to [`Policy`].
+/// Runs futures created by [`CreateFuture`] accorrding to [`Policy`].
 /// ## Simple concurrent policy
-/// Run at most 4 concurrent futures and wait a successful one.
+/// Runs at most 4 concurrent futures and wait a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{concurrent::parallel, Attempts};
+/// use fure::policies::{parallel, Attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -78,7 +135,7 @@ pub trait Policy<T, E>: Sized {
     /// All previous futures won't be cancelled.
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
-    /// Check the policy if a new futures should be created using [`CreateFuture`].
+    /// Checks the policy if a new futures should be created using [`CreateFuture`].
     ///
     /// This method is passed a reference to the future's result or [`None`] if it was called after [`Policy::force_retry_after`].
     ///

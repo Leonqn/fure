@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-/// Create an iterator that yields fixed duration.
+/// Creates an iterator which yields fixed duration.
 pub fn fixed(duration: Duration) -> impl Iterator<Item = Duration> {
     std::iter::repeat(duration)
 }
 
-/// Create an iterator which yields an exponential sequence of durations.
+/// Creates an iterator which yields an exponential sequence of durations.
 /// ## Example
 /// ```
 /// use std::time::Duration;

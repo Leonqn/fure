@@ -17,3 +17,6 @@ reqwest = "0.11"
 
 [features]
 default = [ "tokio" ]
+
+[package.metadata.docs.rs]
+features = ["rand", "tokio"]
