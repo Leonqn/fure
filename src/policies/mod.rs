@@ -20,7 +20,7 @@ pub fn failed<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     }
 }
 
-/// Returns a policy to retry futures while `cond` returns `true`
+/// Creates a policy to retry futures while `cond` returns `true`
 pub fn cond<P, T, E, FN>(policy: P, cond: FN) -> RetryAttempts<P, FN>
 where
     FN: FnMut(Option<Result<&T, &E>>) -> bool,
@@ -31,7 +31,7 @@ where
     }
 }
 
-/// An policy created by [`failed`] and [`cond`].
+/// A policy is created by [`failed`] and [`cond`].
 pub struct RetryAttempts<P, C> {
     policy: P,
     condition: C,
@@ -88,6 +88,7 @@ where
 }
 
 pin_project! {
+    /// A future for [`RetryAttempts`]
     pub struct RetryMap<F, C>
     {
         #[pin]
