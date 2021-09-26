@@ -4,7 +4,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::Attempts;
 use crate::Policy;
 use pin_project_lite::pin_project;
 
@@ -26,16 +25,15 @@ use pin_project_lite::pin_project;
 /// # Ok(())
 /// # }
 /// ```
-pub fn sequential<T, E>(policy: Attempts<T, E>) -> SequentialRetryPolicy<T, E> {
-    SequentialRetryPolicy { policy }
+pub fn sequential() -> SequentialRetryPolicy {
+    SequentialRetryPolicy
 }
 
 /// A policy is created by [`sequential`] function
-pub struct SequentialRetryPolicy<T, E> {
-    policy: Attempts<T, E>,
-}
+#[derive(Debug, Clone, Copy)]
+pub struct SequentialRetryPolicy;
 
-impl<T, E> Policy<T, E> for SequentialRetryPolicy<T, E> {
+impl<T, E> Policy<T, E> for SequentialRetryPolicy {
     type ForceRetryFuture = Pending<()>;
     type RetryFuture = Ready<Self>;
 
@@ -43,9 +41,8 @@ impl<T, E> Policy<T, E> for SequentialRetryPolicy<T, E> {
         pending()
     }
 
-    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-        let policy = self.policy.retry(result)?;
-        Some(ready(Self { policy }))
+    fn retry(self, _result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
+        Some(ready(self))
     }
 }
 
@@ -76,61 +73,56 @@ mod retry_backoff {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn backoff<T, E, I>(policy: Attempts<T, E>, backoff: I) -> BackoffRetry<T, E, I> {
-        BackoffRetry { policy, backoff }
+    pub fn backoff<I>(backoff: I) -> BackoffRetry<I> {
+        BackoffRetry { backoff }
     }
 
     /// A policy is created by [`backoff`] function
-    pub struct BackoffRetry<T, E, I> {
-        policy: Attempts<T, E>,
+    pub struct BackoffRetry<I> {
         backoff: I,
     }
 
-    impl<I, T, E> Policy<T, E> for BackoffRetry<T, E, I>
+    impl<I, T, E> Policy<T, E> for BackoffRetry<I>
     where
         I: Iterator<Item = Duration>,
     {
         type ForceRetryFuture = Pending<()>;
-        type RetryFuture = SeqDelay<T, E, I>;
+        type RetryFuture = SeqDelay<I>;
 
         fn force_retry_after(&self) -> Self::ForceRetryFuture {
             pending()
         }
 
-        fn retry(mut self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-            let policy = self.policy.retry(result)?;
+        fn retry(mut self, _result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
             let delay = self.backoff.next().map(crate::sleep::sleep);
             Some(SeqDelay {
                 backoff: Some(self.backoff),
                 delay,
-                result: Some(policy),
             })
         }
     }
 
     pin_project! {
         /// A future for [`backoff`] policy
-        pub struct SeqDelay<T, E, I>
+        pub struct SeqDelay<I>
         {
             backoff: Option<I>,
             #[pin]
             delay: Option<crate::sleep::Sleep>,
-            result: Option<Attempts<T, E>>
         }
     }
 
-    impl<T, E, I> Future for SeqDelay<T, E, I>
+    impl<I> Future for SeqDelay<I>
     where
         I: Iterator<Item = Duration>,
     {
-        type Output = BackoffRetry<T, E, I>;
+        type Output = BackoffRetry<I>;
 
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let this = self.project();
             match this.delay.as_pin_mut().map(|x| x.poll(cx)) {
                 Some(Poll::Pending) => Poll::Pending,
                 _ => Poll::Ready(backoff(
-                    this.result.take().expect("SeqDelay result must be some"),
                     this.backoff.take().expect("SeqDelay Backoff must be some"),
                 )),
             }
@@ -144,13 +136,16 @@ pub use retry_backoff::*;
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use crate::retry;
     use crate::tests::run_test;
-    use crate::{policies::Attempts, retry};
 
     mod retry_backoff {
         use std::time::{Duration, Instant};
 
-        use crate::{backoff::exponential, policies::sequential::backoff};
+        use crate::{
+            backoff::exponential,
+            policies::{sequential::backoff, PolicyExt},
+        };
 
         use super::*;
 
@@ -165,10 +160,12 @@ mod tests {
 
                 let _result = crate::tests::spawn(retry(
                     create_fut,
-                    backoff(
-                        Attempts::new(2),
-                        exponential(Duration::from_millis(50), 2, Some(Duration::from_secs(1))),
-                    ),
+                    backoff(exponential(
+                        Duration::from_millis(50),
+                        2,
+                        Some(Duration::from_secs(1)),
+                    ))
+                    .attempts(2),
                 ))
                 .await;
 
@@ -180,7 +177,7 @@ mod tests {
     mod retry_failed {
         use std::time::Duration;
 
-        use crate::policies::sequential::sequential;
+        use crate::policies::{sequential::sequential, PolicyExt};
 
         use super::*;
 
@@ -214,9 +211,9 @@ mod tests {
                     }
                 };
 
-                crate::tests::spawn(async move {
-                    retry(create_fut, sequential(Attempts::new(1))).await
-                });
+                crate::tests::spawn(
+                    async move { retry(create_fut, sequential().attempts(2)).await },
+                );
                 crate::sleep::sleep(Duration::from_millis(10)).await;
 
                 {
@@ -226,7 +223,7 @@ mod tests {
                 *pass_allowed.lock().unwrap() = true;
                 crate::sleep::sleep(Duration::from_millis(10)).await;
                 let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 2);
+                assert_eq!(*guard, 3);
             })
         }
     }

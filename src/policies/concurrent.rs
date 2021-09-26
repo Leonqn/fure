@@ -2,8 +2,6 @@ use std::future::{ready, Ready};
 
 use crate::Policy;
 
-use super::Attempts;
-
 /// Creates a policy to run futures concurrently.
 ///
 /// If one of the futures completes immediately (without returning [`std::task::Poll::Pending`]) no next futures will be run.
@@ -25,17 +23,15 @@ use super::Attempts;
 /// # Ok(())
 /// # }
 /// ```
-pub fn parallel<T, E>(policy: Attempts<T, E>) -> ParallelRetryPolicy<T, E> {
-    ParallelRetryPolicy { policy }
+pub fn parallel() -> ParallelRetryPolicy {
+    ParallelRetryPolicy
 }
 
 /// A policy is created by [`parallel`] function
-#[derive(Clone, Copy)]
-pub struct ParallelRetryPolicy<T, E> {
-    policy: Attempts<T, E>,
-}
+#[derive(Debug, Clone, Copy)]
+pub struct ParallelRetryPolicy;
 
-impl<T, E> Policy<T, E> for ParallelRetryPolicy<T, E> {
+impl<T, E> Policy<T, E> for ParallelRetryPolicy {
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
 
@@ -43,10 +39,8 @@ impl<T, E> Policy<T, E> for ParallelRetryPolicy<T, E> {
         ready(())
     }
 
-    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-        Some(ready(Self {
-            policy: self.policy.retry(result)?,
-        }))
+    fn retry(self, _result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
+        Some(ready(Self))
     }
 }
 #[cfg(any(feature = "tokio", feature = "async-std"))]
@@ -79,23 +73,16 @@ mod delayed {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn interval<T, E>(
-        policy: Attempts<T, E>,
-        force_retry_after: Duration,
-    ) -> IntervalRetryPolicy<T, E> {
-        IntervalRetryPolicy {
-            policy,
-            force_retry_after,
-        }
+    pub fn interval(force_retry_after: Duration) -> IntervalRetryPolicy {
+        IntervalRetryPolicy { force_retry_after }
     }
 
     /// A policy is created by [`interval`] function
-    pub struct IntervalRetryPolicy<T, E> {
-        policy: Attempts<T, E>,
+    pub struct IntervalRetryPolicy {
         force_retry_after: Duration,
     }
 
-    impl<T, E> Policy<T, E> for IntervalRetryPolicy<T, E> {
+    impl<T, E> Policy<T, E> for IntervalRetryPolicy {
         type ForceRetryFuture = crate::sleep::Sleep;
         type RetryFuture = Ready<Self>;
 
@@ -103,11 +90,8 @@ mod delayed {
             crate::sleep::sleep(self.force_retry_after)
         }
 
-        fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-            Some(ready(Self {
-                policy: self.policy.retry(result)?,
-                force_retry_after: self.force_retry_after,
-            }))
+        fn retry(self, _result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
+            Some(ready(self))
         }
     }
 }
@@ -118,14 +102,13 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use super::super::Attempts;
     use crate::retry;
     use crate::tests::run_test;
     use std::future::pending;
 
     mod concurrent {
 
-        use crate::policies::concurrent::parallel;
+        use crate::policies::{concurrent::parallel, PolicyExt};
 
         use super::*;
 
@@ -143,7 +126,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, parallel(Attempts::new(2))).await;
+                let result = retry(create_fut, parallel().attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 1);
@@ -172,7 +155,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, parallel(Attempts::new(2))).await;
+                let result = retry(create_fut, parallel().attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -201,7 +184,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, parallel(Attempts::new(2))).await;
+                let result = retry(create_fut, parallel().attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -215,7 +198,7 @@ mod test {
 
         use std::time::{Duration, Instant};
 
-        use crate::policies::concurrent::interval;
+        use crate::policies::{concurrent::interval, PolicyExt};
 
         use super::*;
 
@@ -237,11 +220,8 @@ mod test {
                     }
                 };
 
-                let result = retry(
-                    create_fut,
-                    interval(Attempts::new(2), Duration::from_secs(10000)),
-                )
-                .await;
+                let result =
+                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -267,11 +247,8 @@ mod test {
                     }
                 };
 
-                let result = retry(
-                    create_fut,
-                    interval(Attempts::new(2), Duration::from_secs(10000)),
-                )
-                .await;
+                let result =
+                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -300,11 +277,8 @@ mod test {
                     }
                 };
                 let now = Instant::now();
-                let result = retry(
-                    create_fut,
-                    interval(Attempts::new(2), Duration::from_millis(50)),
-                )
-                .await;
+                let result =
+                    retry(create_fut, interval(Duration::from_millis(50)).attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -328,11 +302,8 @@ mod test {
                     })
                 };
 
-                let result = retry(
-                    create_fut,
-                    interval(Attempts::new(2), Duration::from_secs(10000)),
-                )
-                .await;
+                let result =
+                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 1);
