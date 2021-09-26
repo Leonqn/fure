@@ -16,7 +16,7 @@
 //! When one of runninng requests completes with an [`Ok`] result it will be returned.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
-//! use fure::policies::{interval, attempts};
+//! use fure::policies::{interval, retry_failed};
 //! use std::time::Duration;
 //!
 //! let get_body = || async {
@@ -25,7 +25,7 @@
 //!         .text()
 //!         .await
 //! };
-//! let policy = attempts(interval(Duration::from_secs(1)), 3);
+//! let policy = retry_failed(interval(Duration::from_secs(1)), 3);
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);
 //! # Ok(())
@@ -76,7 +76,7 @@ mod future;
 /// Runs at most 4 concurrent futures and waits a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, attempts};
+/// use fure::policies::{parallel, retry_failed};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -84,7 +84,7 @@ mod future;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, retry_failed(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }

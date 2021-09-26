@@ -17,7 +17,7 @@ At most 4 requests will be fired.
 
 When one of runninng requests completes with an [`Ok`] result it will be returned.
 ```rust
-use fure::policies::{interval, attempts};
+use fure::policies::{interval, retry_failed};
 use std::time::Duration;
 
 let get_body = || async {
@@ -26,7 +26,7 @@ let get_body = || async {
         .text()
         .await
 };
-let policy = attempts(interval(Duration::from_secs(1)), 3);
+let policy = retry_failed(interval(Duration::from_secs(1)), 3);
 let body = fure::retry(get_body, policy).await?;
 println!("body = {}", body);
 ```

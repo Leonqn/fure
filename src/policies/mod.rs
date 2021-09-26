@@ -12,8 +12,8 @@ mod sequential;
 pub use concurrent::*;
 pub use sequential::*;
 
-/// Creates a policy to retry futures specified number of times
-pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
+/// Creates a policy to retry failed futures specified number of times
+pub fn retry_failed<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     RetryAttempts {
         policy,
         condition: max_retries,
@@ -31,7 +31,7 @@ where
     }
 }
 
-/// An policy created by [`attempts`] and [`retry_if`].
+/// An policy created by [`retry_failed`] and [`retry_if`].
 pub struct RetryAttempts<P, C> {
     policy: P,
     condition: C,
@@ -120,11 +120,11 @@ where
 #[cfg(test)]
 mod tests {
 
-    mod attempts {
+    mod retry_failed {
         use std::sync::{Arc, Mutex};
 
         use crate::{
-            policies::{attempts, sequential},
+            policies::{retry_failed, sequential},
             retry,
             tests::run_test,
         };
@@ -140,7 +140,7 @@ mod tests {
                     Err::<(), ()>(())
                 };
                 let policy = sequential();
-                let retry_if = attempts(policy, 2);
+                let retry_if = retry_failed(policy, 2);
 
                 let result = retry(create_fut, retry_if).await;
 
@@ -161,7 +161,7 @@ mod tests {
                     Ok::<(), ()>(())
                 };
                 let policy = sequential();
-                let retry_if = attempts(policy, 2);
+                let retry_if = retry_failed(policy, 2);
 
                 let result = retry(create_fut, retry_if).await;
 

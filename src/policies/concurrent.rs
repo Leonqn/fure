@@ -10,7 +10,7 @@ use crate::Policy;
 ///
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, attempts};
+/// use fure::policies::{parallel, retry_failed};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -18,7 +18,7 @@ use crate::Policy;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, retry_failed(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -59,7 +59,7 @@ mod delayed {
     /// If request takes less than 1 second no next futures will be run.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::policies::{interval, attempts};
+    /// use fure::policies::{interval, retry_failed};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -68,7 +68,7 @@ mod delayed {
     ///         .text()
     ///         .await
     /// };
-    /// let body = fure::retry(get_body, attempts(interval(Duration::from_secs(1)), 4)).await?;
+    /// let body = fure::retry(get_body, retry_failed(interval(Duration::from_secs(1)), 4)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }
@@ -102,7 +102,7 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use crate::policies::attempts;
+    use crate::policies::retry_failed;
     use crate::retry;
     use crate::tests::run_test;
     use std::future::pending;
@@ -136,7 +136,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, attempts(parallel(), 4)).await;
+                let result = retry(create_fut, retry_failed(parallel(), 4)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 4);
@@ -161,7 +161,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, attempts(parallel(), 5)).await;
+                let result = retry(create_fut, retry_failed(parallel(), 5)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -196,7 +196,7 @@ mod test {
 
                 let result = retry(
                     create_fut,
-                    attempts(interval(Duration::from_secs(10000)), 2),
+                    retry_failed(interval(Duration::from_secs(10000)), 2),
                 )
                 .await;
 
@@ -224,8 +224,11 @@ mod test {
                     }
                 };
                 let now = Instant::now();
-                let result =
-                    retry(create_fut, attempts(interval(Duration::from_millis(50)), 2)).await;
+                let result = retry(
+                    create_fut,
+                    retry_failed(interval(Duration::from_millis(50)), 2),
+                )
+                .await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
