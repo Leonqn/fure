@@ -1,3 +1,5 @@
+[![Workflow Status](https://github.com/Leonqn/fure/workflows/CI/badge.svg)](https://github.com/Leonqn/fure/actions?query=workflow%3A%22CI%22)
+
 # fure
 
 A crate for retrying futures.

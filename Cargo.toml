@@ -23,3 +23,6 @@ reqwest = "0.11"
 
 [features]
 default = [ "tokio", "rand" ]
+
+[badges]
+github = { repository = "Leonqn/fure", workflow = "CI" }
