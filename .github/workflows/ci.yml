@@ -29,8 +29,8 @@ jobs:
     - name: clippy with rand
       run: cargo clippy --no-default-features --features rand -- -D warnings
     - name: clippy with async-std
-      run: cargo clippy --no-default-features --features async-std,rand -- -D warnings
+      run: cargo clippy --no-default-features --features async-std -- -D warnings
     - name: Run tests with default-features
       run: cargo test --verbose
     - name: Run tests with async-std
-      run: cargo test --no-default-features --features async-std --verbose
+      run: cargo test --no-default-features --features async-std,rand --verbose
