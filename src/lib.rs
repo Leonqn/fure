@@ -32,7 +32,7 @@
 //! # }
 //! ```
 //! ## Sequential retry with backoff.
-//! Retries failed requests with an exponential backoff and a jitter.
+//! Retries failed requests with an exponential backoff.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
 //! use fure::{policies::{backoff, retry_if}, backoff::exponential};
@@ -44,8 +44,7 @@
 //!         .text()
 //!         .await
 //! };
-//! let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
-//!     .map(fure::backoff::jitter);
+//! let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)));
 //! let policy = retry_if(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);

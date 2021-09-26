@@ -1,11 +1,6 @@
-use std::{
-    future::{pending, ready, Future, Pending, Ready},
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::future::{pending, ready, Pending, Ready};
 
 use crate::Policy;
-use pin_project_lite::pin_project;
 
 /// Creates a policy to run futures sequentially.
 /// ## Example
@@ -49,7 +44,13 @@ impl<T, E> Policy<T, E> for SequentialRetryPolicy {
 #[cfg(any(feature = "tokio", feature = "async-std"))]
 mod retry_backoff {
     use super::*;
+    use pin_project_lite::pin_project;
     use std::time::Duration;
+    use std::{
+        future::Future,
+        pin::Pin,
+        task::{Context, Poll},
+    };
 
     /// Creates a policy to run futures sequentially with specified backoff.
     /// ## Example

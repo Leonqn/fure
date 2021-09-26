@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install latest stable
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v1
+    - name: fmt
+      run: cargo fmt -- --check
+    - name: clippy without default-features
+      run: cargo clippy --no-default-features -- -D warnings
+    - name: clippy with rand
+      run: cargo clippy --no-default-features --features rand -- -D warnings
+    - name: clippy with async-std
+      run: cargo clippy --no-default-features --features async-std -- -D warnings
+    - name: Run tests with default-features
+      run: cargo test --verbose
+    - name: Run tests with async-std
+      run: cargo test --no-default-features --feature async-std --verbose
