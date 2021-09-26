@@ -1,7 +1,8 @@
-//! A crate for retrying futures using different policies.
-//! [`Policy`] trait will help you define different retry policies
+//! A crate for retrying futures.
 //!
-//! The crate contains some simple builtin policies in [`policies`] module.
+//! [`Policy`] trait will help you define different retry policies.
+//!
+//! Some builtin policies can be found in [`policies`] module.
 //! # Examples.
 //! ## Interval retry.
 //! Starts with sending a request, setting up a 1 second timer, and waits for either of them.
