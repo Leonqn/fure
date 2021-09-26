@@ -10,7 +10,7 @@ use crate::Policy;
 ///
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, failed};
+/// use fure::policies::{parallel, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -18,7 +18,7 @@ use crate::Policy;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, failed(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -59,7 +59,7 @@ mod delayed {
     /// If request takes less than 1 second no next futures will be run.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::policies::{interval, failed};
+    /// use fure::policies::{interval, attempts};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -68,7 +68,7 @@ mod delayed {
     ///         .text()
     ///         .await
     /// };
-    /// let body = fure::retry(get_body, failed(interval(Duration::from_secs(1)), 4)).await?;
+    /// let body = fure::retry(get_body, attempts(interval(Duration::from_secs(1)), 4)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }
@@ -102,7 +102,7 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
-    use crate::policies::failed;
+    use crate::policies::attempts;
     use crate::retry;
     use crate::tests::run_test;
     use std::future::pending;
@@ -136,7 +136,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, failed(parallel(), 4)).await;
+                let result = retry(create_fut, attempts(parallel(), 4)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 4);
@@ -161,7 +161,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, failed(parallel(), 5)).await;
+                let result = retry(create_fut, attempts(parallel(), 5)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -180,7 +180,7 @@ mod test {
         use super::*;
 
         #[test]
-        fn should_return_last_error_when_all_failed() {
+        fn should_return_last_error_when_all_attempts() {
             run_test(async {
                 let call_count = Arc::new(Mutex::new(0));
                 let create_fut = || async {
@@ -194,8 +194,11 @@ mod test {
                     }
                 };
 
-                let result =
-                    retry(create_fut, failed(interval(Duration::from_secs(10000)), 2)).await;
+                let result = retry(
+                    create_fut,
+                    attempts(interval(Duration::from_secs(10000)), 2),
+                )
+                .await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -222,7 +225,7 @@ mod test {
                 };
                 let now = Instant::now();
                 let result =
-                    retry(create_fut, failed(interval(Duration::from_millis(50)), 2)).await;
+                    retry(create_fut, attempts(interval(Duration::from_millis(50)), 2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
