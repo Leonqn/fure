@@ -1,10 +1,10 @@
+use crate::Policy;
+use pin_project_lite::pin_project;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-
-use pin_project_lite::pin_project;
 
 mod concurrent;
 mod sequential;
@@ -12,8 +12,7 @@ mod sequential;
 pub use concurrent::*;
 pub use sequential::*;
 
-use crate::Policy;
-
+/// Creates a policy to retry futures specified number of times
 pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     RetryAttempts {
         policy,
@@ -21,6 +20,7 @@ pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     }
 }
 
+/// Returns a policy to retry futures while `retry_if` returns `true`
 pub fn retry_if<P, T, E, FN>(policy: P, retry_if: FN) -> RetryAttempts<P, FN>
 where
     FN: FnMut(Option<Result<&T, &E>>) -> bool,
@@ -31,6 +31,7 @@ where
     }
 }
 
+/// An policy created by [`attempts`] and [`retry_if`].
 pub struct RetryAttempts<P, C> {
     policy: P,
     condition: C,

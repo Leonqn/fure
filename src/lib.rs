@@ -1,5 +1,5 @@
 //! A crate for retrying futures using different policies.
-//! The [`Policy`] will help you define different retry policies
+//! The [`Policy`] trait will help you define different retry policies
 //!
 //! The crate contains some simple builtin policies in [`policies`] module.
 //! # Examples.
@@ -15,7 +15,7 @@
 //! When one of runninng requests completes with an [`Ok`] result it will be returned.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
-//! use fure::policies::{interval, Attempts};
+//! use fure::policies::{interval, attempts};
 //! use std::time::Duration;
 //!
 //! let get_body = || async {
@@ -24,20 +24,17 @@
 //!         .text()
 //!         .await
 //! };
-//! let policy = interval(
-//!     Attempts::with_retry_if(3, |r| !matches!(r, Ok(_))),
-//!     Duration::from_secs(1),
-//! );
+//! let policy = attempts(interval(Duration::from_secs(1)), 3);
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);
 //! # Ok(())
 //! # }
 //! ```
 //! ## Sequential retry with backoff.
-//! Retries request with an exponential backoff and a jitter if it fails.
+//! Retries failed requests with an exponential backoff and a jitter.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
-//! use fure::policies::{backoff, Attempts};
+//! use fure::{policies::{backoff, retry_if}, backoff::exponential};
 //! use std::time::Duration;
 //!
 //! let get_body = || async {
@@ -46,12 +43,9 @@
 //!         .text()
 //!         .await
 //! };
-//! let exp_backoff = fure::backoff::exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
+//! let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
 //!     .map(fure::backoff::jitter);
-//! let policy = backoff(
-//!     Attempts::with_retry_if(3, |r| !matches!(r, Ok(_))),
-//!     exp_backoff,
-//! );
+//! let policy = retry_if(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);
 //! # Ok(())
@@ -82,7 +76,7 @@ mod future;
 /// Runs at most 4 concurrent futures and wait a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, Attempts};
+/// use fure::policies::{parallel, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -90,7 +84,7 @@ mod future;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, parallel(Attempts::new(3))).await?;
+/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -122,7 +116,7 @@ where
     }
 }
 
-/// A generic policy used to determine how a future should be retried.
+/// A generic policy is used to determine how a future should be retried.
 pub trait Policy<T, E>: Sized {
     /// Future type returned by [`Policy::force_retry_after`].
     type ForceRetryFuture: Future;

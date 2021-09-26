@@ -12,7 +12,7 @@ use pin_project_lite::pin_project;
 /// Sends at most 4 requests and returns the first [`Ok`] result.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{sequential, Attempts};
+/// use fure::policies::{sequential, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -20,7 +20,7 @@ use pin_project_lite::pin_project;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, sequential(Attempts::new(3))).await?;
+/// let body = fure::retry(get_body, attempts(sequential(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -58,7 +58,7 @@ mod retry_backoff {
     /// Each next request will be sent only after specified backoff.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::{backoff::fixed, policies::{backoff, Attempts}};
+    /// use fure::{backoff::fixed, policies::{backoff, attempts}};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -68,7 +68,7 @@ mod retry_backoff {
     ///         .await
     /// };
     /// let fixed = fixed(Duration::from_secs(3));
-    /// let body = fure::retry(get_body, backoff(Attempts::new(3), fixed)).await?;
+    /// let body = fure::retry(get_body, attempts(backoff(fixed), 3)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }

@@ -10,7 +10,7 @@ use crate::Policy;
 ///
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, Attempts};
+/// use fure::policies::{parallel, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -18,7 +18,7 @@ use crate::Policy;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, parallel(Attempts::new(3))).await?;
+/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -27,7 +27,7 @@ pub fn parallel() -> ParallelRetryPolicy {
     ParallelRetryPolicy
 }
 
-/// A policy is created by [`parallel`] function
+/// A policy is created by [`parallel`] function.
 #[derive(Debug, Clone, Copy)]
 pub struct ParallelRetryPolicy;
 
@@ -59,7 +59,7 @@ mod delayed {
     /// If request takes less than 1 second no next futures will be run.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::policies::{interval, Attempts};
+    /// use fure::policies::{interval, attempts};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -68,7 +68,7 @@ mod delayed {
     ///         .text()
     ///         .await
     /// };
-    /// let body = fure::retry(get_body, interval(Attempts::new(3), Duration::from_secs(1))).await?;
+    /// let body = fure::retry(get_body, attempts(interval(Duration::from_secs(1)), 4)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }
@@ -77,7 +77,7 @@ mod delayed {
         IntervalRetryPolicy { force_retry_after }
     }
 
-    /// A policy is created by [`interval`] function
+    /// A policy is created by [`interval`] function.
     pub struct IntervalRetryPolicy {
         force_retry_after: Duration,
     }
