@@ -17,7 +17,7 @@ At most 4 requests will be fired.
 
 When one of runninng requests completes with an [`Ok`] result it will be returned.
 ```rust
-use fure::policies::{interval, retry_failed};
+use fure::policies::{interval, failed};
 use std::time::Duration;
 
 let get_body = || async {
@@ -26,14 +26,14 @@ let get_body = || async {
         .text()
         .await
 };
-let policy = retry_failed(interval(Duration::from_secs(1)), 3);
+let policy = failed(interval(Duration::from_secs(1)), 3);
 let body = fure::retry(get_body, policy).await?;
 println!("body = {}", body);
 ```
 ### Sequential retry with backoff.
 Retries failed requests with an exponential backoff and a jitter.
 ```rust
-use fure::{policies::{backoff, retry_if}, backoff::exponential};
+use fure::{policies::{backoff, cond}, backoff::exponential};
 use std::time::Duration;
 
 let get_body = || async {
@@ -44,7 +44,7 @@ let get_body = || async {
 };
 let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
     .map(fure::backoff::jitter);
-let policy = retry_if(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
+let policy = cond(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
 let body = fure::retry(get_body, policy).await?;
 println!("body = {}", body);
 ```

@@ -13,25 +13,25 @@ pub use concurrent::*;
 pub use sequential::*;
 
 /// Creates a policy to retry failed futures specified number of times
-pub fn retry_failed<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
+pub fn failed<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     RetryAttempts {
         policy,
         condition: max_retries,
     }
 }
 
-/// Returns a policy to retry futures while `retry_if` returns `true`
-pub fn retry_if<P, T, E, FN>(policy: P, retry_if: FN) -> RetryAttempts<P, FN>
+/// Returns a policy to retry futures while `cond` returns `true`
+pub fn cond<P, T, E, FN>(policy: P, cond: FN) -> RetryAttempts<P, FN>
 where
     FN: FnMut(Option<Result<&T, &E>>) -> bool,
 {
     RetryAttempts {
         policy,
-        condition: retry_if,
+        condition: cond,
     }
 }
 
-/// An policy created by [`retry_failed`] and [`retry_if`].
+/// An policy created by [`failed`] and [`cond`].
 pub struct RetryAttempts<P, C> {
     policy: P,
     condition: C,
@@ -120,11 +120,11 @@ where
 #[cfg(test)]
 mod tests {
 
-    mod retry_failed {
+    mod failed {
         use std::sync::{Arc, Mutex};
 
         use crate::{
-            policies::{retry_failed, sequential},
+            policies::{failed, sequential},
             retry,
             tests::run_test,
         };
@@ -140,9 +140,9 @@ mod tests {
                     Err::<(), ()>(())
                 };
                 let policy = sequential();
-                let retry_if = retry_failed(policy, 2);
+                let cond = failed(policy, 2);
 
-                let result = retry(create_fut, retry_if).await;
+                let result = retry(create_fut, cond).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -161,9 +161,9 @@ mod tests {
                     Ok::<(), ()>(())
                 };
                 let policy = sequential();
-                let retry_if = retry_failed(policy, 2);
+                let cond = failed(policy, 2);
 
-                let result = retry(create_fut, retry_if).await;
+                let result = retry(create_fut, cond).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 1);
@@ -172,17 +172,17 @@ mod tests {
         }
     }
 
-    mod retry_if {
+    mod cond {
         use std::sync::{Arc, Mutex};
 
         use crate::{
-            policies::{retry_if, sequential},
+            policies::{cond, sequential},
             retry,
             tests::run_test,
         };
 
         #[test]
-        fn should_retry_if_returns_true() {
+        fn should_cond_returns_true() {
             run_test(async move {
                 let call_count = Arc::new(Mutex::new(0));
                 let create_fut = || async {
@@ -193,12 +193,12 @@ mod tests {
                 };
                 let policy = sequential();
                 let mut tries_left = 3;
-                let retry_if = retry_if(policy, |result| {
+                let cond = cond(policy, |result| {
                     tries_left -= 1;
                     tries_left != 0 && !matches!(result, Some(Ok(_)))
                 });
 
-                let result = retry(create_fut, retry_if).await;
+                let result = retry(create_fut, cond).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);

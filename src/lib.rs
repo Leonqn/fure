@@ -16,7 +16,7 @@
 //! When one of runninng requests completes with an [`Ok`] result it will be returned.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
-//! use fure::policies::{interval, retry_failed};
+//! use fure::policies::{interval, failed};
 //! use std::time::Duration;
 //!
 //! let get_body = || async {
@@ -25,7 +25,7 @@
 //!         .text()
 //!         .await
 //! };
-//! let policy = retry_failed(interval(Duration::from_secs(1)), 3);
+//! let policy = failed(interval(Duration::from_secs(1)), 3);
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);
 //! # Ok(())
@@ -35,7 +35,7 @@
 //! Retries failed requests with an exponential backoff.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
-//! use fure::{policies::{backoff, retry_if}, backoff::exponential};
+//! use fure::{policies::{backoff, cond}, backoff::exponential};
 //! use std::time::Duration;
 //!
 //! let get_body = || async {
@@ -45,7 +45,7 @@
 //!         .await
 //! };
 //! let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)));
-//! let policy = retry_if(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
+//! let policy = cond(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
 //! let body = fure::retry(get_body, policy).await?;
 //! println!("body = {}", body);
 //! # Ok(())
@@ -76,7 +76,7 @@ mod future;
 /// Runs at most 4 concurrent futures and waits a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, retry_failed};
+/// use fure::policies::{parallel, failed};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -84,7 +84,7 @@ mod future;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, retry_failed(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, failed(parallel(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }

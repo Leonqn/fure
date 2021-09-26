@@ -7,7 +7,7 @@ use crate::Policy;
 /// Sends at most 4 requests and returns the first [`Ok`] result.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{sequential, retry_failed};
+/// use fure::policies::{sequential, failed};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -15,7 +15,7 @@ use crate::Policy;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, retry_failed(sequential(), 3)).await?;
+/// let body = fure::retry(get_body, failed(sequential(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
@@ -59,7 +59,7 @@ mod retry_backoff {
     /// Each next request will be sent only after specified backoff.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
-    /// use fure::{backoff::fixed, policies::{backoff, retry_failed}};
+    /// use fure::{backoff::fixed, policies::{backoff, failed}};
     /// use std::time::Duration;
     ///
     /// let get_body = || async {
@@ -69,7 +69,7 @@ mod retry_backoff {
     ///         .await
     /// };
     /// let fixed = fixed(Duration::from_secs(3));
-    /// let body = fure::retry(get_body, retry_failed(backoff(fixed), 3)).await?;
+    /// let body = fure::retry(get_body, failed(backoff(fixed), 3)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }
@@ -137,7 +137,7 @@ pub use retry_backoff::*;
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use crate::policies::retry_failed;
+    use crate::policies::failed;
     use crate::retry;
     use crate::tests::run_test;
     mod retry_backoff {
@@ -161,7 +161,7 @@ mod tests {
                     2,
                     Some(Duration::from_secs(1)),
                 ));
-                let result = retry(create_fut, retry_failed(policy, 2)).await;
+                let result = retry(create_fut, failed(policy, 2)).await;
 
                 assert!(now.elapsed() > Duration::from_millis(150));
                 assert!(result.is_err());
@@ -169,7 +169,7 @@ mod tests {
         }
     }
 
-    mod retry_failed {
+    mod failed {
         use std::time::Duration;
 
         use crate::policies::sequential::sequential;
@@ -206,9 +206,9 @@ mod tests {
                     }
                 };
 
-                crate::tests::spawn(async move {
-                    retry(create_fut, retry_failed(sequential(), 2)).await
-                });
+                crate::tests::spawn(
+                    async move { retry(create_fut, failed(sequential(), 2)).await },
+                );
                 crate::sleep::sleep(Duration::from_millis(10)).await;
 
                 {
