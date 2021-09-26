@@ -48,7 +48,7 @@ mod delayed {
     use super::*;
     use std::time::Duration;
 
-    /// Creates a policy to run additional future in case of error result or after `force_retry_after` without getting a result.
+    /// Creates a policy to run additional future after `force_retry_after` without getting a result.
     ///
     /// After each completed future the previous delay is dropped and a new one is started.
     /// ## Example
