@@ -4,7 +4,7 @@ use crate::Policy;
 
 /// Creates a policy to run futures concurrently.
 ///
-/// If one of the futures completes immediately (without returning [`std::task::Poll::Pending`]) no next futures will be run.
+/// If one of the futures completes immediately no next futures will be run.
 /// ## Example
 /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
 ///
@@ -48,9 +48,9 @@ mod delayed {
     use super::*;
     use std::time::Duration;
 
-    /// Creates a policy to run additional future in case of error result or `force_retry_after` time elapsed without getting a result.
+    /// Creates a policy to run additional future in case of error result or after `force_retry_after` without getting a result.
     ///
-    /// After each completed future the previous delay is dropped and a new one started.
+    /// After each completed future the previous delay is dropped and a new one is started.
     /// ## Example
     /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
     ///

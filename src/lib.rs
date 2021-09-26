@@ -1,14 +1,14 @@
 //! A crate for retrying futures using different policies.
-//! The [`Policy`] trait will help you define different retry policies
+//! [`Policy`] trait will help you define different retry policies
 //!
 //! The crate contains some simple builtin policies in [`policies`] module.
 //! # Examples.
 //! ## Interval retry.
 //! Starts with sending a request, setting up a 1 second timer, and waits for either of them.
 //!
-//! If the timer completes first (it means that the request doesn't complete in 1 second) one more request is fired.
+//! If the timer completes first (it means that the request didn't complete in 1 second) one more request fires.
 //!
-//! If the request completes first and it has on [`Ok`] response it is returned, if request has [`Err`] response timer is reset and a new request is started.
+//! If the request completes first and it has an [`Ok`] response it is returned, if request has an [`Err`] response, timer resets and a new request fires.
 //!
 //! At most 4 requests will be fired.
 //!
@@ -73,7 +73,7 @@ mod future;
 
 /// Runs futures created by [`CreateFuture`] accorrding to [`Policy`].
 /// ## Simple concurrent policy
-/// Runs at most 4 concurrent futures and wait a successful one.
+/// Runs at most 4 concurrent futures and waits a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
 /// use fure::policies::{parallel, attempts};
@@ -129,11 +129,13 @@ pub trait Policy<T, E>: Sized {
     /// All previous futures won't be cancelled.
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
-    /// Checks the policy if a new futures should be created using [`CreateFuture`].
+    /// Checks the policy if a new futures should be created and polled using [`CreateFuture`].
     ///
-    /// This method is passed a reference to the future's result or [`None`] if it was called after [`Policy::force_retry_after`].
+    /// If the future should be created return [`Some`] with a new policy, otherwise return [`None`].
     ///
-    /// If a new future should be created and polled return [`Some`] with a new policy, otherwise return [`None`].
+    /// The future will be created only after this method resolves the new policy
+    ///
+    /// This method is passed a reference to the future's result or [`None`] if it is called after [`Policy::force_retry_after`].
     fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture>;
 }
 
