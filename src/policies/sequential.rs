@@ -136,40 +136,34 @@ pub use retry_backoff::*;
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use crate::policies::attempts;
     use crate::retry;
     use crate::tests::run_test;
-
     mod retry_backoff {
         use std::time::{Duration, Instant};
 
-        use crate::{
-            backoff::exponential,
-            policies::{sequential::backoff, PolicyExt},
-        };
+        use crate::{backoff::exponential, policies::sequential::backoff};
 
         use super::*;
 
         #[test]
         fn should_run_next_after_backoff() {
             run_test(async {
-                let create_fut = || async move {
+                let create_fut = || async {
                     crate::tests::yield_now().await;
                     Err::<(), ()>(())
                 };
                 let now = Instant::now();
 
-                let _result = crate::tests::spawn(retry(
-                    create_fut,
-                    backoff(exponential(
-                        Duration::from_millis(50),
-                        2,
-                        Some(Duration::from_secs(1)),
-                    ))
-                    .attempts(2),
-                ))
-                .await;
+                let policy = backoff(exponential(
+                    Duration::from_millis(50),
+                    2,
+                    Some(Duration::from_secs(1)),
+                ));
+                let result = retry(create_fut, attempts(policy, 2)).await;
 
-                assert!(now.elapsed() > Duration::from_millis(150))
+                assert!(now.elapsed() > Duration::from_millis(150));
+                assert!(result.is_err());
             })
         }
     }
@@ -177,7 +171,7 @@ mod tests {
     mod retry_failed {
         use std::time::Duration;
 
-        use crate::policies::{sequential::sequential, PolicyExt};
+        use crate::policies::sequential::sequential;
 
         use super::*;
 
@@ -212,7 +206,7 @@ mod tests {
                 };
 
                 crate::tests::spawn(
-                    async move { retry(create_fut, sequential().attempts(2)).await },
+                    async move { retry(create_fut, attempts(sequential(), 2)).await },
                 );
                 crate::sleep::sleep(Duration::from_millis(10)).await;
 

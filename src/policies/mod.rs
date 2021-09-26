@@ -14,29 +14,20 @@ pub use sequential::*;
 
 use crate::Policy;
 
-pub trait PolicyExt: Sized {
-    fn attempts(self, max_retries: usize) -> RetryAttempts<Self, usize>;
-    fn retry_if<T, E, FN>(self, retry_if: FN) -> RetryAttempts<Self, FN>
-    where
-        FN: FnMut(Option<Result<&T, &E>>) -> bool;
+pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
+    RetryAttempts {
+        policy,
+        condition: max_retries,
+    }
 }
 
-impl<P> PolicyExt for P {
-    fn attempts(self, max_retries: usize) -> RetryAttempts<P, usize> {
-        RetryAttempts {
-            policy: self,
-            condition: max_retries,
-        }
-    }
-
-    fn retry_if<T, E, FN>(self, retry_if: FN) -> RetryAttempts<P, FN>
-    where
-        FN: FnMut(Option<Result<&T, &E>>) -> bool,
-    {
-        RetryAttempts {
-            policy: self,
-            condition: retry_if,
-        }
+pub fn retry_if<P, T, E, FN>(policy: P, retry_if: FN) -> RetryAttempts<P, FN>
+where
+    FN: FnMut(Option<Result<&T, &E>>) -> bool,
+{
+    RetryAttempts {
+        policy,
+        condition: retry_if,
     }
 }
 
@@ -60,12 +51,12 @@ where
 
     fn retry(mut self, result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
         if (self.condition)(result) {
-            None
-        } else {
             Some(RetryMap {
                 policy_f: self.policy.retry(result)?,
                 add_field: Some(self.condition),
             })
+        } else {
+            None
         }
     }
 }
@@ -121,6 +112,97 @@ where
                     .expect("RetryMap add_field must be some"),
             }),
             Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    mod attempts {
+        use std::sync::{Arc, Mutex};
+
+        use crate::{
+            policies::{attempts, sequential},
+            retry,
+            tests::run_test,
+        };
+
+        #[test]
+        fn should_retry_specified_number_of_times() {
+            run_test(async move {
+                let call_count = Arc::new(Mutex::new(0));
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    let mut call_count = call_count.lock().unwrap();
+                    *call_count += 1;
+                    Err::<(), ()>(())
+                };
+                let policy = sequential();
+                let retry_if = attempts(policy, 2);
+
+                let result = retry(create_fut, retry_if).await;
+
+                let guard = call_count.lock().unwrap();
+                assert_eq!(*guard, 3);
+                assert!(result.is_err());
+            })
+        }
+
+        #[test]
+        fn should_not_retry_ok_result() {
+            run_test(async move {
+                let call_count = Arc::new(Mutex::new(0));
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    let mut call_count = call_count.lock().unwrap();
+                    *call_count += 1;
+                    Ok::<(), ()>(())
+                };
+                let policy = sequential();
+                let retry_if = attempts(policy, 2);
+
+                let result = retry(create_fut, retry_if).await;
+
+                let guard = call_count.lock().unwrap();
+                assert_eq!(*guard, 1);
+                assert!(result.is_ok());
+            })
+        }
+    }
+
+    mod retry_if {
+        use std::sync::{Arc, Mutex};
+
+        use crate::{
+            policies::{retry_if, sequential},
+            retry,
+            tests::run_test,
+        };
+
+        #[test]
+        fn should_retry_if_returns_true() {
+            run_test(async move {
+                let call_count = Arc::new(Mutex::new(0));
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    let mut call_count = call_count.lock().unwrap();
+                    *call_count += 1;
+                    Err::<(), ()>(())
+                };
+                let policy = sequential();
+                let mut tries_left = 3;
+                let retry_if = retry_if(policy, |result| {
+                    tries_left -= 1;
+                    tries_left != 0 && !matches!(result, Some(Ok(_)))
+                });
+
+                let result = retry(create_fut, retry_if).await;
+
+                let guard = call_count.lock().unwrap();
+                assert_eq!(*guard, 3);
+                assert!(result.is_err());
+            })
         }
     }
 }

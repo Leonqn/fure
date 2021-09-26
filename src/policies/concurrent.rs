@@ -102,63 +102,44 @@ pub use delayed::*;
 mod test {
     use std::sync::{Arc, Mutex};
 
+    use crate::policies::attempts;
     use crate::retry;
     use crate::tests::run_test;
     use std::future::pending;
 
     mod concurrent {
 
-        use crate::policies::{concurrent::parallel, PolicyExt};
+        use crate::policies::concurrent::parallel;
 
         use super::*;
-
-        #[test]
-        fn should_run_only_one_future_when_first_completed() {
-            run_test(async {
-                let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
-                        crate::tests::yield_now().await;
-                        let mut mutex_guard = call_count.lock().unwrap();
-                        *mutex_guard += 1;
-                        Ok::<(), ()>(())
-                    }
-                };
-
-                let result = retry(create_fut, parallel().attempts(2)).await;
-
-                let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 1);
-                assert!(result.is_ok());
-            })
-        }
 
         #[test]
         fn should_run_all_non_ready_futures() {
             run_test(async {
                 let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
+                let create_fut = || async {
+                    let call = {
+                        let mut mutex_guard = call_count.lock().unwrap();
+                        *mutex_guard += 1;
+                        *mutex_guard
+                    };
+
+                    if call == 3 {
+                        // we need 3 Poll::Pending to run one more future before returning an ok result
+                        // create -> poll (1) -> waiting_delay (2)(it also polls) -> create -> poll (3)
                         crate::tests::yield_now().await;
-                        let call = {
-                            let mut mutex_guard = call_count.lock().unwrap();
-                            *mutex_guard += 1;
-                            *mutex_guard
-                        };
-                        if call == 3 {
-                            Ok::<(), ()>(())
-                        } else {
-                            pending().await
-                        }
+                        crate::tests::yield_now().await;
+                        crate::tests::yield_now().await;
+                        Ok::<(), ()>(())
+                    } else {
+                        pending().await
                     }
                 };
 
-                let result = retry(create_fut, parallel().attempts(2)).await;
+                let result = retry(create_fut, attempts(parallel(), 4)).await;
 
                 let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 3);
+                assert_eq!(*guard, 4);
                 assert!(result.is_ok());
             })
         }
@@ -167,24 +148,20 @@ mod test {
         fn should_run_futures_till_ready_one() {
             run_test(async {
                 let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
-                        crate::tests::yield_now().await;
-                        let call = {
-                            let mut mutex_guard = call_count.lock().unwrap();
-                            *mutex_guard += 1;
-                            *mutex_guard
-                        };
-                        if call == 2 {
-                            Ok::<(), ()>(())
-                        } else {
-                            pending().await
-                        }
+                let create_fut = || async {
+                    let call = {
+                        let mut mutex_guard = call_count.lock().unwrap();
+                        *mutex_guard += 1;
+                        *mutex_guard
+                    };
+                    if call == 2 {
+                        Ok::<(), ()>(())
+                    } else {
+                        pending().await
                     }
                 };
 
-                let result = retry(create_fut, parallel().attempts(2)).await;
+                let result = retry(create_fut, attempts(parallel(), 5)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
@@ -198,57 +175,30 @@ mod test {
 
         use std::time::{Duration, Instant};
 
-        use crate::policies::{concurrent::interval, PolicyExt};
+        use crate::policies::concurrent::interval;
 
         use super::*;
 
         #[test]
-        fn should_retry_when_failed() {
+        fn should_return_last_error_when_all_failed() {
             run_test(async {
                 let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
-                        crate::tests::yield_now().await;
-                        let mut mutex_guard = call_count.lock().unwrap();
-                        *mutex_guard += 1;
-                        if *mutex_guard == 1 {
-                            Err(())
-                        } else {
-                            Ok(())
-                        }
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    let mut mutex_guard = call_count.lock().unwrap();
+                    *mutex_guard += 1;
+                    if *mutex_guard == 1 {
+                        Err::<(), _>(*mutex_guard)
+                    } else {
+                        Err(*mutex_guard)
                     }
                 };
 
-                let result =
-                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
-
-                let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 2);
-                assert!(result.is_ok());
-            })
-        }
-
-        #[test]
-        fn should_return_last_error_when_all_failed() {
-            run_test(async move {
-                let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
-                        crate::tests::yield_now().await;
-                        let mut mutex_guard = call_count.lock().unwrap();
-                        *mutex_guard += 1;
-                        if *mutex_guard == 1 {
-                            Err::<(), _>(*mutex_guard)
-                        } else {
-                            Err(*mutex_guard)
-                        }
-                    }
-                };
-
-                let result =
-                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
+                let result = retry(
+                    create_fut,
+                    attempts(interval(Duration::from_secs(10000)), 2),
+                )
+                .await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 3);
@@ -260,53 +210,26 @@ mod test {
         fn should_retry_after_delay() {
             run_test(async {
                 let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    async move {
-                        crate::tests::yield_now().await;
-                        let call_count = {
-                            let mut mutex_guard = call_count.lock().unwrap();
-                            *mutex_guard += 1;
-                            *mutex_guard
-                        };
-                        if call_count == 1 {
-                            pending::<Result<(), ()>>().await
-                        } else {
-                            Ok(())
-                        }
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    let call_count = {
+                        let mut mutex_guard = call_count.lock().unwrap();
+                        *mutex_guard += 1;
+                        *mutex_guard
+                    };
+                    if call_count == 1 {
+                        pending::<Result<(), ()>>().await
+                    } else {
+                        Ok(())
                     }
                 };
                 let now = Instant::now();
                 let result =
-                    retry(create_fut, interval(Duration::from_millis(50)).attempts(2)).await;
+                    retry(create_fut, attempts(interval(Duration::from_millis(50)), 2)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);
                 assert!(now.elapsed() >= Duration::from_millis(50));
-                assert!(result.is_ok());
-            })
-        }
-
-        #[test]
-        fn should_not_retry_when_ok() {
-            run_test(async {
-                let call_count = Arc::new(Mutex::new(0));
-                let create_fut = || {
-                    let call_count = call_count.clone();
-                    Box::pin(async move {
-                        crate::tests::yield_now().await;
-
-                        let mut mutex_guard = call_count.lock().unwrap();
-                        *mutex_guard += 1;
-                        Ok::<_, ()>(())
-                    })
-                };
-
-                let result =
-                    retry(create_fut, interval(Duration::from_secs(10000)).attempts(2)).await;
-
-                let guard = call_count.lock().unwrap();
-                assert_eq!(*guard, 1);
                 assert!(result.is_ok());
             })
         }
