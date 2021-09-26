@@ -1,7 +1,7 @@
 //! A crate for retrying futures using different policies.
 //! The [`Policy`] will help you define different retry policies
 //!
-//! The crate contains some builtin policies in [`policies`] module.
+//! The crate contains some simple builtin policies in [`policies`] module.
 //! # Examples.
 //! ## Interval retry.
 //! Starts with sending a request, setting up a 1 second timer, and waits for either of them.
@@ -25,7 +25,7 @@
 //!         .await
 //! };
 //! let policy = interval(
-//!     Attempts::with_retry_if(3, |r| !matches!(r, Some(Ok(_)))),
+//!     Attempts::with_retry_if(3, |r| !matches!(r, Ok(_))),
 //!     Duration::from_secs(1),
 //! );
 //! let body = fure::retry(get_body, policy).await?;
@@ -49,7 +49,7 @@
 //! let exp_backoff = fure::backoff::exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
 //!     .map(fure::backoff::jitter);
 //! let policy = backoff(
-//!     Attempts::with_retry_if(3, |r| !matches!(r, Some(Ok(_)))),
+//!     Attempts::with_retry_if(3, |r| !matches!(r, Ok(_))),
 //!     exp_backoff,
 //! );
 //! let body = fure::retry(get_body, policy).await?;

@@ -4,11 +4,12 @@ use crate::Policy;
 
 use super::Attempts;
 
-/// Creates a policy to run futures concurrently until [`ConcurrentRetry::retry`] returns [`None`].
-/// ## Example
-/// Sends at most 4 concurrent requests and waits for one for which result [`ConcurrentRetry::retry`] returns [`Some`].
+/// Creates a policy to run futures concurrently.
 ///
-/// If one of the futures completes immediately (without returning [`std::task::Poll::Pending`]) no additional futures will be run
+/// If one of the futures completes immediately (without returning [`std::task::Poll::Pending`]) no next futures will be run.
+/// ## Example
+/// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
+///
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
 /// use fure::policies::{parallel, Attempts};
@@ -24,36 +25,17 @@ use super::Attempts;
 /// # Ok(())
 /// # }
 /// ```
-pub fn parallel<P>(policy: P) -> ParallelRetryPolicy<P> {
+pub fn parallel<T, E>(policy: Attempts<T, E>) -> ParallelRetryPolicy<T, E> {
     ParallelRetryPolicy { policy }
 }
 
-/// A helper policy trait which is used for [`interval`] and [`parallel`] functions.
-pub trait ConcurrentRetry<T, E>: Sized {
-    /// Checks the policy if a new futures should be created.
-    ///
-    /// This method is passed a reference to the future's result or [`None`] if there is no completed future.
-    ///
-    /// If a new future should be created and polled return [`Some`] with a new policy, otherwise return [`None`].
-    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self>;
-}
-
-impl<T, E> ConcurrentRetry<T, E> for Attempts<T, E> {
-    fn retry(self, result: Option<Result<&T, &E>>) -> Option<Self> {
-        self.retry(result)
-    }
-}
-
 /// A policy is created by [`parallel`] function
-#[derive(Debug, Clone, Copy)]
-pub struct ParallelRetryPolicy<P> {
-    policy: P,
+#[derive(Clone, Copy)]
+pub struct ParallelRetryPolicy<T, E> {
+    policy: Attempts<T, E>,
 }
 
-impl<P, T, E> Policy<T, E> for ParallelRetryPolicy<P>
-where
-    P: ConcurrentRetry<T, E>,
-{
+impl<T, E> Policy<T, E> for ParallelRetryPolicy<T, E> {
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
 
@@ -72,15 +54,15 @@ mod delayed {
     use super::*;
     use std::time::Duration;
 
-    /// Creates a policy to run additional future every time when `force_retry_after` delay elapsed and/or [`ConcurrentRetry::retry`] returns [`None`].
+    /// Creates a policy to run additional future in case of error result or `force_retry_after` time elapsed without getting a result.
     ///
     /// After each completed future the previous delay is dropped and a new one started.
     /// ## Example
-    /// Sends at most 4 concurrent requests and waits for one for which result [`ConcurrentRetry::retry`] returns [`Some`].
+    /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
     ///
     /// Every next future will be run only after 1 second.
     ///
-    /// If request time takes less than 1 second no additional futures will be run.
+    /// If request takes less than 1 second no next futures will be run.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
     /// use fure::policies::{interval, Attempts};
@@ -97,7 +79,10 @@ mod delayed {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn interval<P>(policy: P, force_retry_after: Duration) -> IntervalRetryPolicy<P> {
+    pub fn interval<T, E>(
+        policy: Attempts<T, E>,
+        force_retry_after: Duration,
+    ) -> IntervalRetryPolicy<T, E> {
         IntervalRetryPolicy {
             policy,
             force_retry_after,
@@ -105,15 +90,12 @@ mod delayed {
     }
 
     /// A policy is created by [`interval`] function
-    pub struct IntervalRetryPolicy<P> {
-        policy: P,
+    pub struct IntervalRetryPolicy<T, E> {
+        policy: Attempts<T, E>,
         force_retry_after: Duration,
     }
 
-    impl<P, T, E> Policy<T, E> for IntervalRetryPolicy<P>
-    where
-        P: ConcurrentRetry<T, E>,
-    {
+    impl<T, E> Policy<T, E> for IntervalRetryPolicy<T, E> {
         type ForceRetryFuture = crate::sleep::Sleep;
         type RetryFuture = Ready<Self>;
 
