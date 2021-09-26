@@ -3,6 +3,9 @@
 //! [`Policy`] trait will help you define different retry policies.
 //!
 //! Some builtin policies can be found in [`policies`] module.
+//!
+//! By default this create uses `tokio` timers for [`crate::policies::interval`] and [`crate::policies::backoff`] policies,
+//! but `async-std` is also available as feature `async-std`.
 //! # Examples.
 //! ## Interval retry.
 //! Starts with sending a request, setting up a 1 second timer, and waits for either of them.

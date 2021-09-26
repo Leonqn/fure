@@ -5,6 +5,9 @@ A crate for retrying futures.
 [`Policy`] trait will help you define different retry policies.
 
 Some builtin policies can be found in [`policies`] module.
+
+By default this create uses `tokio` timers for [`crate::policies::interval`] and [`crate::policies::backoff`] policies,
+but `async-std` is also available as feature `async-std`.
 ## Examples.
 ### Interval retry.
 Starts with sending a request, setting up a 1 second timer, and waits for either of them.
@@ -33,7 +36,7 @@ println!("body = {}", body);
 ### Sequential retry with backoff.
 Retries failed requests with an exponential backoff and a jitter.
 ```rust
-use fure::{policies::{backoff, cond}, backoff::exponential};
+use fure::{policies::{backoff, cond}, backoff::{exponential, jitter}};
 use std::time::Duration;
 
 let get_body = || async {
@@ -43,7 +46,7 @@ let get_body = || async {
         .await
 };
 let exp_backoff = exponential(Duration::from_secs(1), 2, Some(Duration::from_secs(10)))
-    .map(fure::backoff::jitter);
+    .map(jitter);
 let policy = cond(backoff(exp_backoff), |result| !matches!(result, Some(Ok(_))));
 let body = fure::retry(get_body, policy).await?;
 println!("body = {}", body);
