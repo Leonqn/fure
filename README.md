@@ -1,3 +1,7 @@
+[![Crates.io](https://img.shields.io/crates/v/fure.svg)](https://crates.io/crates/fure)
+[![Docs.rs](https://img.shields.io/docsrs/fure.svg)](https://docs.rs/fure)
+[![Workflow Status](https://github.com/Leonqn/fure/workflows/CI/badge.svg)](https://github.com/Leonqn/fure/actions?query=workflow%3A%22CI%22)
+
 # fure
 
 A crate for retrying futures.
@@ -17,8 +21,6 @@ If the timer completes first (it means that the request didn't complete in 1 sec
 If the request completes first and it has an [`Ok`] response it is returned, if request has an [`Err`] response, timer resets and a new request fires.
 
 At most 4 requests will be fired.
-
-When one of runninng requests completes with an [`Ok`] result it will be returned.
 ```rust
 use fure::policies::{interval, attempts};
 use std::time::Duration;

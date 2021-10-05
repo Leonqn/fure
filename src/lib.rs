@@ -15,8 +15,6 @@
 //! If the request completes first and it has an [`Ok`] response it is returned, if request has an [`Err`] response, timer resets and a new request fires.
 //!
 //! At most 4 requests will be fired.
-//!
-//! When one of runninng requests completes with an [`Ok`] result it will be returned.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
 //! use fure::policies::{interval, attempts};
@@ -128,12 +126,14 @@ pub trait Policy<T, E>: Sized {
     /// Future type returned by [`Policy::retry`].
     type RetryFuture: Future<Output = Self>;
 
-    /// When completes a [`Policy::retry`] will be called with [`None`] argument.
+    /// This method is called right after calling your future and
+    /// if it completes before your future [`Policy::retry`] will be called with [`None`] argument
+    /// without cancelling your future.
     ///
-    /// All previous futures won't be cancelled.
+    /// If your future completes first, current [`Self::ForceRetryFuture`] will be dropped and this method will be called again if needs.
     fn force_retry_after(&self) -> Self::ForceRetryFuture;
 
-    /// Checks the policy if a new futures should be created and polled using [`CreateFuture`].
+    /// Checks the policy if a new future should be created and polled using [`CreateFuture`].
     ///
     /// If the future should be created return [`Some`] with a new policy, otherwise return [`None`].
     ///
