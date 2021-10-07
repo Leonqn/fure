@@ -1,11 +1,10 @@
 [package]
 name = "fure"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2018"
 authors = ["Ilya Titkov <ilya@titkov.me>"]
 keywords = ["futures-retry", "retry", "futures"]
 license = "MIT"
-license-file = "LICENSE"
 description = "Retrying futures using different policies"
 categories = ["asynchronous"]
 readme = "README.md"
@@ -27,4 +26,3 @@ default = [ "tokio", "rand" ]
 
 [badges]
 github = { repository = "Leonqn/fure", workflow = "CI" }
-crates = { image = "", url = ""}
