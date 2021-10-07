@@ -96,9 +96,7 @@ impl Policy<Response, Error> for RetryPolicy {
     }
 }
 
-let get_response = || async {
-    reqwest::get("https://www.rust-lang.org").await
-};
+let get_response = || reqwest::get("https://www.rust-lang.org");
 let response = fure::retry(get_response, RetryPolicy).await?;
 println!("body = {}", response.text().await?);
 ```
