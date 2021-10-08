@@ -36,7 +36,7 @@ let body = fure::retry(get_body, policy).await?;
 println!("body = {}", body);
 ```
 ### Sequential retry with backoff.
-Retries requests with an exponential backoff and a jitter.
+Retries failed requests with an exponential backoff and a jitter.
 ```rust
 use fure::{policies::{backoff, cond}, backoff::{exponential, jitter}};
 use std::time::Duration;
