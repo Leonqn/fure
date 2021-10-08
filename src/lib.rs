@@ -33,7 +33,7 @@
 //! # }
 //! ```
 //! ## Sequential retry with backoff.
-//! Retries attempts requests with an exponential backoff and a jitter.
+//! Retries requests with an exponential backoff and a jitter.
 //! ```
 //! # async fn run() -> Result<(), reqwest::Error> {
 //! use fure::{policies::{backoff, cond}, backoff::{exponential, jitter}};
