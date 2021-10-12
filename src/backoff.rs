@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 /// Creates an iterator which yields fixed duration.
-pub fn fixed(duration: Duration) -> impl Iterator<Item = Duration> {
+pub fn fixed(duration: Duration) -> impl Iterator<Item = Duration> + Clone {
     std::iter::repeat(duration)
 }
 
@@ -29,7 +29,7 @@ pub fn exponential(
     mut initial: Duration,
     factor: u32,
     max: Option<Duration>,
-) -> impl Iterator<Item = Duration> {
+) -> impl Iterator<Item = Duration> + Clone {
     std::iter::from_fn(move || match initial.checked_mul(factor) {
         Some(x) => {
             let new = max.filter(|m| *m < x).unwrap_or(x);

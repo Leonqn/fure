@@ -78,6 +78,7 @@ mod delayed {
     }
 
     /// A policy is created by [`interval`] function.
+    #[derive(Debug, Clone, Copy)]
     pub struct IntervalRetryPolicy {
         force_retry_after: Duration,
     }

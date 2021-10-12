@@ -79,6 +79,7 @@ mod retry_backoff {
     }
 
     /// A policy is created by [`backoff`] function
+    #[derive(Debug, Clone, Copy)]
     pub struct BackoffRetry<I> {
         backoff: I,
     }

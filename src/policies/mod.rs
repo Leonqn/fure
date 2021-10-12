@@ -32,6 +32,7 @@ where
 }
 
 /// A policy is created by [`attempts`] and [`cond`].
+#[derive(Debug, Clone, Copy)]
 pub struct RetryAttempts<P, C> {
     policy: P,
     condition: C,
