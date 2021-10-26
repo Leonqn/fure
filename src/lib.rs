@@ -128,7 +128,7 @@ mod future;
 /// Runs at most 4 concurrent futures and waits a successful one.
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, attempts};
+/// use fure::policies::{concurrent, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -136,7 +136,7 @@ mod future;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, attempts(concurrent(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }

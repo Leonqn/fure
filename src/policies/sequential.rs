@@ -3,6 +3,8 @@ use std::future::{pending, ready, Pending, Ready};
 use crate::Policy;
 
 /// Creates a policy to run futures sequentially.
+///
+/// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::attempts`), [cond](`super::cond`) or your own wrapper.
 /// ## Example
 /// Sends at most 4 requests and returns the first [`Ok`] result.
 /// ```
@@ -53,6 +55,8 @@ mod retry_backoff {
     };
 
     /// Creates a policy to run futures sequentially with specified backoff.
+    ///
+    /// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::super::attempts`), [cond](`super::super::cond`) or your own wrapper.
     /// ## Example
     /// Sends at most 4 requests and returns the first [`Ok`] result.
     ///

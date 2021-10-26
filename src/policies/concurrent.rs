@@ -4,13 +4,15 @@ use crate::Policy;
 
 /// Creates a policy to run futures concurrently.
 ///
-/// If one of the futures completes immediately no next futures will be run.
+/// If one of the futures completes immediately futures won't be run.
+///
+/// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::attempts`), [cond](`super::cond`) or your own wrapper.
 /// ## Example
 /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
 ///
 /// ```
 /// # async fn run() -> Result<(), reqwest::Error> {
-/// use fure::policies::{parallel, attempts};
+/// use fure::policies::{concurrent, attempts};
 ///
 /// let get_body = || async {
 ///     reqwest::get("https://www.rust-lang.org")
@@ -18,20 +20,20 @@ use crate::Policy;
 ///         .text()
 ///         .await
 /// };
-/// let body = fure::retry(get_body, attempts(parallel(), 3)).await?;
+/// let body = fure::retry(get_body, attempts(concurrent(), 3)).await?;
 /// println!("body = {}", body);
 /// # Ok(())
 /// # }
 /// ```
-pub fn parallel() -> ParallelRetryPolicy {
-    ParallelRetryPolicy
+pub fn concurrent() -> ConcurrentRetryPolicy {
+    ConcurrentRetryPolicy
 }
 
-/// A policy is created by [`parallel`] function.
+/// A policy is created by [`concurrent`] function.
 #[derive(Debug, Clone, Copy)]
-pub struct ParallelRetryPolicy;
+pub struct ConcurrentRetryPolicy;
 
-impl<T, E> Policy<T, E> for ParallelRetryPolicy {
+impl<T, E> Policy<T, E> for ConcurrentRetryPolicy {
     type ForceRetryFuture = Ready<()>;
     type RetryFuture = Ready<Self>;
 
@@ -44,13 +46,15 @@ impl<T, E> Policy<T, E> for ParallelRetryPolicy {
     }
 }
 #[cfg(any(feature = "tokio", feature = "async-std"))]
-mod delayed {
+mod _interval {
     use super::*;
     use std::time::Duration;
 
     /// Creates a policy to run additional future after `force_retry_after` has passed without a result.
     ///
     /// After each completed future the previous delay is dropped and a new one is started.
+    ///
+    /// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::super::attempts`), [cond](`super::super::cond`) or your own wrapper.
     /// ## Example
     /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
     ///
@@ -68,7 +72,7 @@ mod delayed {
     ///         .text()
     ///         .await
     /// };
-    /// let body = fure::retry(get_body, attempts(interval(Duration::from_secs(1)), 4)).await?;
+    /// let body = fure::retry(get_body, attempts(interval(Duration::from_secs(1)), 3)).await?;
     /// println!("body = {}", body);
     /// # Ok(())
     /// # }
@@ -97,7 +101,7 @@ mod delayed {
     }
 }
 #[cfg(any(feature = "tokio", feature = "async-std"))]
-pub use delayed::*;
+pub use _interval::*;
 
 #[cfg(test)]
 mod test {
@@ -110,7 +114,7 @@ mod test {
 
     mod concurrent {
 
-        use crate::policies::concurrent::parallel;
+        use crate::policies::concurrent::concurrent;
 
         use super::*;
 
@@ -137,7 +141,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, attempts(parallel(), 4)).await;
+                let result = retry(create_fut, attempts(concurrent(), 4)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 4);
@@ -162,7 +166,7 @@ mod test {
                     }
                 };
 
-                let result = retry(create_fut, attempts(parallel(), 5)).await;
+                let result = retry(create_fut, attempts(concurrent(), 5)).await;
 
                 let guard = call_count.lock().unwrap();
                 assert_eq!(*guard, 2);

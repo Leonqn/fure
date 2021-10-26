@@ -12,7 +12,7 @@ mod sequential;
 pub use concurrent::*;
 pub use sequential::*;
 
-/// Creates a policy to retry failed futures specified number of times
+/// Wraps a policy to retry failed futures specified number of times
 pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     RetryAttempts {
         policy,
@@ -20,7 +20,7 @@ pub fn attempts<P>(policy: P, max_retries: usize) -> RetryAttempts<P, usize> {
     }
 }
 
-/// Creates a policy to retry futures while `cond` returns `true`
+/// Wraps a policy to retry futures while `cond` returns `true`
 pub fn cond<P, T, E, FN>(policy: P, cond: FN) -> RetryAttempts<P, FN>
 where
     FN: FnMut(Option<Result<&T, &E>>) -> bool,
