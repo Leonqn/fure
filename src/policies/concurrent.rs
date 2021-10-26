@@ -4,7 +4,7 @@ use crate::Policy;
 
 /// Creates a policy to run futures concurrently.
 ///
-/// If one of the futures completes immediately futures won't be run.
+/// If one of the futures completes immediately no next futures will be run.
 ///
 /// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::attempts`), [cond](`super::cond`) or your own wrapper.
 /// ## Example
