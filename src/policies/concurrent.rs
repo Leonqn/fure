@@ -56,11 +56,13 @@ mod _interval {
     ///
     /// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::super::attempts`), [cond](`super::super::cond`) or your own wrapper.
     /// ## Example
-    /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
+    /// Starts with sending a request, setting up a 1 second timer and waits for either of them.
     ///
-    /// Every next future will be run only when 1 second has passed without a result from previous futures.
+    /// If the timer completes first (it means that the request didn't complete in 1 second) one more request fires.
     ///
-    /// If request takes less than 1 second no next futures will be run.
+    /// If the request completes first and it has an [`Ok`] response it is returned, if request has an [`Err`] response, timer resets and a new request fires.
+    ///
+    /// At most 4 requests will be fired.
     /// ```
     /// # async fn run() -> Result<(), reqwest::Error> {
     /// use fure::policies::{interval, attempts};
