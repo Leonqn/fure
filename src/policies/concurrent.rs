@@ -50,7 +50,7 @@ mod _interval {
     use super::*;
     use std::time::Duration;
 
-    /// Creates a policy to run additional future after `force_retry_after` has passed without a result.
+    /// Creates a policy to concurrently run additional future after `force_retry_after` has passed without a result from previous future.
     ///
     /// After each completed future the previous delay is dropped and a new one is started.
     ///
@@ -58,7 +58,7 @@ mod _interval {
     /// ## Example
     /// Sends at most 4 concurrent requests and waits for one with an [`Ok`] result.
     ///
-    /// Every next future will be run only after 1 second.
+    /// Every next future will be run only when 1 second has passed without a result from previous futures.
     ///
     /// If request takes less than 1 second no next futures will be run.
     /// ```
