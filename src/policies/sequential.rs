@@ -56,7 +56,7 @@ mod retry_backoff {
 
     /// Creates a policy to run futures sequentially with specified backoff.
     ///
-    /// Note: this policy has no stop condition, so for getting a result you should wrap it with [attempts](`super::super::attempts`), [cond](`super::super::cond`) or your own wrapper.
+    /// Note: this policy has no stop condition based on result, it retries while backoff iterator returns elements, so for getting the desired result you should wrap it with [attempts](`super::super::attempts`), [cond](`super::super::cond`) or your own wrapper.
     /// ## Example
     /// Sends at most 4 requests and returns the first [`Ok`] result.
     ///
@@ -100,7 +100,7 @@ mod retry_backoff {
         }
 
         fn retry(mut self, _result: Option<Result<&T, &E>>) -> Option<Self::RetryFuture> {
-            let delay = self.backoff.next().map(crate::sleep::sleep);
+            let delay = self.backoff.next().map(crate::sleep::sleep)?;
             Some(SeqDelay {
                 backoff: Some(self.backoff),
                 delay,
@@ -114,7 +114,7 @@ mod retry_backoff {
         {
             backoff: Option<I>,
             #[pin]
-            delay: Option<crate::sleep::Sleep>,
+            delay: crate::sleep::Sleep,
         }
     }
 
@@ -126,9 +126,9 @@ mod retry_backoff {
 
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let this = self.project();
-            match this.delay.as_pin_mut().map(|x| x.poll(cx)) {
-                Some(Poll::Pending) => Poll::Pending,
-                _ => Poll::Ready(backoff(
+            match this.delay.poll(cx) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(_) => Poll::Ready(backoff(
                     this.backoff.take().expect("SeqDelay Backoff must be some"),
                 )),
             }
@@ -170,6 +170,21 @@ mod tests {
 
                 assert!(now.elapsed() > Duration::from_millis(150));
                 assert!(result.is_err());
+            })
+        }
+
+        #[test]
+        fn should_stop_retrying_when_backoff_iter_exhausted() {
+            run_test(async {
+                let create_fut = || async {
+                    crate::tests::yield_now().await;
+                    Err::<(), ()>(())
+                };
+
+                let policy = backoff(std::iter::empty());
+                let result = retry(create_fut, policy).await;
+
+                assert!(result.is_err())
             })
         }
     }
